@@ -72,10 +72,10 @@ Vaihtoehtoisesti voit käyttää Supabase CLI:tä: `supabase link --project-ref 
 Aja SQL Editorissa uutena kyselynä (vaihda oma salasanasi):
 
 ```sql
-select app_private.set_shared_password('Pitkä-ja-hyvä-salasana-2026');
+select app_private.set_shared_password('pyy4k');   -- vaihda omaksesi
 ```
 
-- Salasanan pitää olla vähintään 10 merkkiä. Pitkä sanoista koostuva salasana on hyvä valinta.
+- Salasanan pitää olla vähintään 5 merkkiä. Sekaisin kirjaimia ja numeroita (esim. `pyy4k`) on parempi kuin pelkkä sana tai numerosarja.
 - **Älä tallenna tätä kyselyä** SQL Editorin snippetiksi, koska salasana jäisi selväkielisenä Supabasen kyselyhistoriaan. Tyhjennä editori ajon jälkeen.
 
 ### 2.4 Tarkista REST-rajapinnan asetukset
@@ -111,7 +111,7 @@ window.PESUTUPA_CONFIG = {
 
 ## 3. GitHub Pages -julkaisu
 
-1. Luo GitHubiin uusi repositorio ja vie koodi sinne (`main`-haara):
+1. Luo GitHubiin uusi repositorio ja vie koodi sinne (`main`- tai `master`-haara):
    ```bash
    git add .
    git commit -m "Pesutuvan varausjärjestelmä"
@@ -125,7 +125,7 @@ window.PESUTUPA_CONFIG = {
 
    Molemmat arvot ovat julkisia (ne näkyvät sivun lähdekoodissa), joten ne ovat *Variables*-osiossa eivätkä *Secrets*-osiossa.
 3. **Settings → Pages → Build and deployment → Source:** valitse **GitHub Actions**.
-4. **Actions**-välilehdellä työnkulku *Julkaise GitHub Pagesiin* ajetaan jokaisella `main`-haaran päivityksellä. Ensimmäisellä kerralla sen voi käynnistää käsin painikkeella *Run workflow*.
+4. **Actions**-välilehdellä työnkulku *Julkaise GitHub Pagesiin* ajetaan jokaisella `main`- tai `master`-haaran päivityksellä. Ensimmäisellä kerralla sen voi käynnistää käsin painikkeella *Run workflow*.
 5. Sivu löytyy osoitteesta `https://<käyttäjä>.github.io/<repo>/`. Jaa osoite ja salasana asukkaille.
 
 Repositorio voi olla julkinen, koska siinä ei ole salaisuuksia. Ilmaisella GitHub-tilillä Pages edellyttää julkista repositoriota.

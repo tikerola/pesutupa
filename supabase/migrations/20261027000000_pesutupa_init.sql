@@ -170,8 +170,8 @@ security definer
 set search_path = ''
 as $$
 begin
-  if p_password is null or char_length(p_password) < 10 then
-    raise exception 'Salasanan pitää olla vähintään 10 merkkiä pitkä.';
+  if p_password is null or char_length(p_password) < 5 then
+    raise exception 'Salasanan pitää olla vähintään 5 merkkiä pitkä.';
   end if;
 
   update app_private.settings
