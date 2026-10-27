@@ -1,0 +1,684 @@
+import { rpc, ApiError, isConfigured } from './api.js';
+
+const HOUR = 3600 * 1000;
+const REFRESH_INTERVAL = 30 * 1000;
+const MAX_HOURS = 3;
+
+const STORAGE = {
+  token: 'pesutupa.token',
+  expires: 'pesutupa.expires',
+  apartment: 'pesutupa.apartment',
+  filter: 'pesutupa.filter',
+};
+
+const state = {
+  token: storageGet(STORAGE.token),
+  expiresAt: storageGet(STORAGE.expires),
+  day: startOfDay(new Date()),
+  filter: storageGet(STORAGE.filter) || 'all',
+  devices: [],
+  bookings: [],
+  loadedDayKey: null,
+  myBookings: [],
+  lastUpdated: null,
+  stale: false,
+  loading: false,
+  refreshSeq: 0,
+  timer: null,
+};
+
+const $ = (id) => document.getElementById(id);
+
+// ---------------------------------------------------------------------
+// Apufunktiot
+// ---------------------------------------------------------------------
+
+function storageGet(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function storageSet(key, value) {
+  try {
+    if (value === null || value === undefined) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch { /* yksityinen selaustila tms. */ }
+}
+
+function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (value === undefined || value === null || value === false) continue;
+    if (key === 'className') node.className = value;
+    else if (key === 'text') node.textContent = value;
+    else if (key.startsWith('on')) node.addEventListener(key.slice(2), value);
+    else node.setAttribute(key, value === true ? '' : value);
+  }
+  for (const child of children.flat()) {
+    if (child === null || child === undefined || child === false) continue;
+    node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+  }
+  return node;
+}
+
+function startOfDay(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+function addDays(d, n) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+}
+function isSameDay(a, b) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+// Suomen aikavyöhykkeen poikkeamat ovat tasatunteja, joten tasatunti voidaan laskea epoch-ajasta.
+function floorHour(d) {
+  return new Date(Math.floor(d.getTime() / HOUR) * HOUR);
+}
+function hoursOfDay(day) {
+  const result = [];
+  const end = addDays(day, 1).getTime();
+  for (let t = day.getTime(); t < end; t += HOUR) result.push(new Date(t));
+  return result;
+}
+function dayKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function parseDayKey(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '');
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+}
+
+function fmtTime(d) {
+  return `${d.getHours()}.${String(d.getMinutes()).padStart(2, '0')}`;
+}
+function fmtShortDate(d) {
+  return `${d.getDate()}.${d.getMonth() + 1}.`;
+}
+const weekdayFmt = new Intl.DateTimeFormat('fi-FI', { weekday: 'short' });
+const longDateFmt = new Intl.DateTimeFormat('fi-FI', { weekday: 'long', day: 'numeric', month: 'numeric', year: 'numeric' });
+function fmtDayShort(d) {
+  return `${weekdayFmt.format(d)} ${fmtShortDate(d)}`;
+}
+function fmtDayLong(d) {
+  const today = startOfDay(new Date());
+  const suffix = isSameDay(d, today) ? ' (tänään)' : isSameDay(d, addDays(today, 1)) ? ' (huomenna)' : '';
+  return longDateFmt.format(d) + suffix;
+}
+function fmtRange(s, e) {
+  if (isSameDay(s, e)) return `${fmtTime(s)}–${fmtTime(e)}`;
+  if (e.getTime() === addDays(startOfDay(s), 1).getTime()) return `${fmtTime(s)}–24.00`;
+  return `${fmtShortDate(s)} ${fmtTime(s)} – ${fmtShortDate(e)} ${fmtTime(e)}`;
+}
+function hoursLabel(n) {
+  return n === 1 ? '1 tunti' : `${n} tuntia`;
+}
+
+function deviceName(id) {
+  const device = state.devices.find((d) => d.id === Number(id));
+  return device ? device.name : `Laite ${id}`;
+}
+
+function parseBooking(row) {
+  return {
+    id: row.id,
+    deviceId: Number(row.device_id),
+    apartment: row.apartment_number,
+    start: new Date(row.start_at),
+    end: new Date(row.end_at),
+    isOwn: Boolean(row.is_own),
+  };
+}
+
+function isBusy(deviceId, start, end) {
+  return state.bookings.some((b) => b.deviceId === deviceId && b.start < end && b.end > start);
+}
+
+// ---------------------------------------------------------------------
+// Ilmoitukset
+// ---------------------------------------------------------------------
+
+let messageTimer = null;
+function showMessage(text, type = 'success') {
+  const box = $('message');
+  clearTimeout(messageTimer);
+  box.setAttribute('role', type === 'error' ? 'alert' : 'status');
+  box.className = `message ${type}`;
+  box.textContent = text;
+  box.hidden = false;
+  if (type === 'success') messageTimer = setTimeout(() => { box.hidden = true; }, 10000);
+}
+function clearMessage() {
+  clearTimeout(messageTimer);
+  $('message').hidden = true;
+}
+function showFieldError(id, text) {
+  const node = $(id);
+  node.textContent = text || '';
+  node.hidden = !text;
+}
+
+// ---------------------------------------------------------------------
+// Kirjautuminen
+// ---------------------------------------------------------------------
+
+function showLogin(notice) {
+  stopPolling();
+  $('app-view').hidden = true;
+  $('header-nav').hidden = true;
+  $('login-view').hidden = false;
+  if (notice) showMessage(notice, 'error');
+  $('password').focus();
+}
+
+async function onLogin(event) {
+  event.preventDefault();
+  const password = $('password').value;
+  showFieldError('login-error', '');
+  if (!password) {
+    showFieldError('login-error', 'Kirjoita salasana.');
+    return;
+  }
+
+  const button = $('login-button');
+  button.disabled = true;
+  button.textContent = 'Kirjaudutaan…';
+  try {
+    const result = await rpc('login', { p_password: password, p_previous_token: state.token || null });
+    if (!result || !result.ok) {
+      const errors = {
+        invalid_password: 'Väärä salasana.',
+        too_many_attempts: 'Liian monta epäonnistunutta yritystä. Odota 15 minuuttia ja yritä uudelleen.',
+        not_configured: 'Salasanaa ei ole vielä asetettu. Ota yhteyttä ylläpitäjään.',
+      };
+      showFieldError('login-error', errors[result && result.error] || 'Kirjautuminen epäonnistui.');
+      return;
+    }
+    state.token = result.token;
+    state.expiresAt = result.expires_at;
+    storageSet(STORAGE.token, state.token);
+    storageSet(STORAGE.expires, state.expiresAt);
+    $('password').value = '';
+    clearMessage();
+    await enterApp();
+  } catch (error) {
+    showFieldError('login-error', error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Kirjaudu';
+  }
+}
+
+function onSessionExpired() {
+  // Tunniste säilytetään, jotta uudelleenkirjautuminen voi uusia saman istunnon
+  // ja laitteella tehdyt varaukset pysyvät omina.
+  state.expiresAt = null;
+  storageSet(STORAGE.expires, null);
+  showLogin('Istunto on vanhentunut. Kirjaudu uudelleen.');
+}
+
+async function onLogout() {
+  const count = state.myBookings.length;
+  const question = count
+    ? `Tällä laitteella on ${count} tuleva${count === 1 ? '' : 'a'} varaus${count === 1 ? '' : 'ta'}. Uloskirjautumisen jälkeen et voi enää perua ${count === 1 ? 'sitä' : 'niitä'} tällä laitteella. Kirjaudutaanko ulos?`
+    : 'Kirjaudutaanko ulos?';
+  if (!window.confirm(question)) return;
+
+  const token = state.token;
+  state.token = null;
+  state.expiresAt = null;
+  state.myBookings = [];
+  storageSet(STORAGE.token, null);
+  storageSet(STORAGE.expires, null);
+  try { await rpc('logout', { p_token: token }); } catch { /* istunto vanhenee joka tapauksessa */ }
+  showLogin();
+  showMessage('Olet kirjautunut ulos.');
+}
+
+// ---------------------------------------------------------------------
+// Tietojen lataus
+// ---------------------------------------------------------------------
+
+async function enterApp() {
+  $('login-view').hidden = true;
+  $('app-view').hidden = false;
+  $('header-nav').hidden = false;
+
+  if (!state.devices.length) {
+    try {
+      state.devices = (await rpc('get_devices', { p_token: state.token })).map((d) => ({ id: Number(d.id), name: d.name }));
+    } catch (error) {
+      if (error instanceof ApiError && error.isSessionError) return onSessionExpired();
+      $('calendars').replaceChildren(
+        el('div', { className: 'card' },
+          el('p', { text: `Laitetietojen lataus epäonnistui: ${error.message}` }),
+          el('button', { type: 'button', className: 'button', text: 'Yritä uudelleen', onclick: () => enterApp() })),
+      );
+      $('calendars').setAttribute('aria-busy', 'false');
+      return;
+    }
+    if (state.filter !== 'all' && !state.devices.some((d) => String(d.id) === state.filter)) state.filter = 'all';
+    renderDeviceControls();
+  }
+
+  await refresh();
+  startPolling();
+}
+
+async function refresh() {
+  if (!state.token) return;
+  const seq = ++state.refreshSeq;
+  const day = state.day;
+  state.loading = true;
+  $('calendars').setAttribute('aria-busy', 'true');
+  renderFreshness();
+
+  try {
+    const [bookings, mine] = await Promise.all([
+      rpc('list_bookings', {
+        p_token: state.token,
+        p_from: addDays(day, -1).toISOString(),
+        p_to: addDays(day, 2).toISOString(),
+      }),
+      rpc('my_bookings', { p_token: state.token }),
+    ]);
+    if (seq !== state.refreshSeq) return;
+    state.bookings = bookings.map(parseBooking);
+    state.myBookings = mine.map(parseBooking);
+    state.loadedDayKey = dayKey(day);
+    state.lastUpdated = new Date();
+    state.stale = false;
+  } catch (error) {
+    if (seq !== state.refreshSeq) return;
+    if (error instanceof ApiError && error.isSessionError) return onSessionExpired();
+    state.stale = true;
+    state.loadError = error.message;
+  } finally {
+    if (seq === state.refreshSeq) {
+      state.loading = false;
+      $('calendars').setAttribute('aria-busy', 'false');
+    }
+  }
+  render();
+}
+
+function startPolling() {
+  stopPolling();
+  state.timer = setInterval(() => {
+    if (document.visibilityState === 'visible') refresh();
+  }, REFRESH_INTERVAL);
+}
+function stopPolling() {
+  clearInterval(state.timer);
+  state.timer = null;
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && state.timer) refresh();
+});
+window.addEventListener('online', () => { if (state.timer) refresh(); });
+
+function setDay(day) {
+  state.day = startOfDay(day);
+  render();
+  refresh();
+}
+
+// ---------------------------------------------------------------------
+// Näkymät
+// ---------------------------------------------------------------------
+
+function render() {
+  renderDate();
+  renderFreshness();
+  renderCalendars();
+  renderBookingForm();
+  renderOwnBookings();
+}
+
+function renderDate() {
+  $('date-input').value = dayKey(state.day);
+  $('date-label').textContent = fmtDayLong(state.day);
+  $('booking-date').value = dayKey(state.day);
+  $('booking-date').min = dayKey(new Date());
+}
+
+function renderFreshness() {
+  const node = $('freshness');
+  const dataForDay = state.loadedDayKey === dayKey(state.day);
+  node.classList.toggle('stale', state.stale && !state.loading);
+  $('calendars').classList.toggle('stale', state.stale);
+  if (state.loading && !dataForDay) {
+    node.textContent = 'Ladataan varaustilannetta…';
+  } else if (state.stale) {
+    node.textContent = state.lastUpdated && dataForDay
+      ? `Varaustilannetta ei voitu päivittää. Näkymä on klo ${fmtTime(state.lastUpdated)} tilanne ja voi olla vanhentunut. (${state.loadError})`
+      : `Varaustilannetta ei voitu ladata. (${state.loadError})`;
+  } else if (state.lastUpdated) {
+    node.textContent = `Varaustilanne päivitetty klo ${fmtTime(state.lastUpdated)}:${String(state.lastUpdated.getSeconds()).padStart(2, '0')}. Päivittyy automaattisesti.`;
+  } else {
+    node.textContent = '';
+  }
+}
+
+function renderDeviceControls() {
+  const filter = $('device-filter');
+  const options = [{ value: 'all', label: 'Molemmat' }, ...state.devices.map((d) => ({ value: String(d.id), label: d.name }))];
+  filter.replaceChildren(
+    el('legend', { className: 'visually-hidden', text: 'Näytettävä laite' }),
+    ...options.map((o) =>
+      el('label', {},
+        el('input', {
+          type: 'radio', name: 'device-filter', value: o.value, checked: state.filter === o.value,
+          onchange: () => { state.filter = o.value; storageSet(STORAGE.filter, o.value); renderCalendars(); },
+        }),
+        el('span', { text: o.label }))),
+  );
+
+  const group = $('booking-device');
+  group.replaceChildren(
+    el('legend', { text: 'Laite' }),
+    ...state.devices.map((d, i) =>
+      el('label', {},
+        el('input', { type: 'radio', name: 'booking-device', value: String(d.id), checked: i === 0, onchange: () => renderBookingForm() }),
+        d.name)),
+  );
+}
+
+function buildRows(deviceId) {
+  const dayStart = state.day;
+  const dayEnd = addDays(state.day, 1);
+  const nowHour = floorHour(new Date());
+  const rows = [];
+
+  const pushGap = (s, e) => {
+    if (e <= nowHour) rows.push({ type: 'past', start: s, end: e });
+    else if (s < nowHour) {
+      rows.push({ type: 'past', start: s, end: nowHour });
+      rows.push({ type: 'free', start: nowHour, end: e });
+    } else rows.push({ type: 'free', start: s, end: e });
+  };
+
+  const list = state.bookings
+    .filter((b) => b.deviceId === deviceId && b.start < dayEnd && b.end > dayStart)
+    .sort((a, b) => a.start - b.start);
+
+  let cursor = dayStart;
+  for (const b of list) {
+    if (b.start > cursor) pushGap(cursor, b.start);
+    rows.push({ type: 'booking', booking: b, start: b.start, end: b.end });
+    if (b.end > cursor) cursor = b.end;
+  }
+  if (cursor < dayEnd) pushGap(cursor, dayEnd);
+  return rows;
+}
+
+function renderCalendars() {
+  const container = $('calendars');
+  const devices = state.filter === 'all' ? state.devices : state.devices.filter((d) => String(d.id) === state.filter);
+  container.classList.toggle('two', devices.length > 1);
+
+  if (state.loadedDayKey !== dayKey(state.day)) {
+    // Valitun päivän tietoja ei ole: ei näytetä vapaita aikoja arvauksena.
+    container.replaceChildren(
+      el('div', { className: 'card' },
+        el('p', { className: 'loading', text: state.loading ? 'Ladataan varaustilannetta…' : 'Varaustilannetta ei voitu ladata.' }),
+        !state.loading && el('button', { type: 'button', className: 'button', text: 'Yritä uudelleen', onclick: () => refresh() })),
+    );
+    return;
+  }
+
+  const now = new Date();
+  container.replaceChildren(...devices.map((device) => {
+    const rows = buildRows(device.id).map((row) => {
+      if (row.type === 'booking') {
+        const b = row.booking;
+        const ended = b.end <= now;
+        const status = ended ? 'Päättynyt' : b.isOwn ? 'Oma varaus' : 'Varattu';
+        const cls = ended ? 'slot-past' : b.isOwn ? 'slot-own' : 'slot-booked';
+        const statusCls = ended ? 'status-past' : b.isOwn ? 'status-own' : 'status-booked';
+        return el('tr', { className: cls },
+          el('td', { className: 'col-apartment', text: b.apartment }),
+          el('td', { className: 'col-time', text: fmtRange(b.start, b.end) }),
+          el('td', { className: 'col-status' }, el('span', { className: `status ${statusCls}`, text: status })));
+      }
+      if (row.type === 'past') {
+        return el('tr', { className: 'slot-past' },
+          el('td', { className: 'col-apartment' }, el('span', { 'aria-hidden': 'true', text: '–' })),
+          el('td', { className: 'col-time', text: fmtRange(row.start, row.end) }),
+          el('td', { className: 'col-status' }, el('span', { className: 'status status-past', text: 'Mennyt' })));
+      }
+      return el('tr', { className: 'slot-free' },
+        el('td', { className: 'col-apartment' }, el('span', { 'aria-hidden': 'true', text: '–' })),
+        el('td', { className: 'col-time', text: fmtRange(row.start, row.end) }),
+        el('td', { className: 'col-status' },
+          el('span', { className: 'slot-actions' },
+            el('span', { className: 'status status-free', text: 'Vapaa' }),
+            el('button', {
+              type: 'button', className: 'button small',
+              'aria-label': `Varaa ${device.name} alkaen klo ${fmtTime(row.start)}`,
+              text: 'Varaa',
+              onclick: () => prefillBooking(device.id, row.start),
+            }))));
+    });
+
+    return el('section', { className: 'card device-calendar', 'data-device': String(device.id), 'aria-labelledby': `cal-h-${device.id}` },
+      el('h2', { id: `cal-h-${device.id}` }, el('span', { className: 'device-badge', 'aria-hidden': 'true' }), device.name),
+      el('table', { className: 'slots' },
+        el('caption', { className: 'visually-hidden', text: `${device.name}: varaukset ${fmtDayLong(state.day)}` }),
+        el('thead', {}, el('tr', {},
+          el('th', { scope: 'col', text: 'Asunto' }),
+          el('th', { scope: 'col', text: 'Varausaika' }),
+          el('th', { scope: 'col', className: 'col-status', text: 'Tila' }))),
+        el('tbody', {}, rows)));
+  }));
+}
+
+// ---------------------------------------------------------------------
+// Varauslomake
+// ---------------------------------------------------------------------
+
+function selectedDeviceId() {
+  const checked = document.querySelector('input[name="booking-device"]:checked');
+  return checked ? Number(checked.value) : null;
+}
+
+function prefillBooking(deviceId, start) {
+  const radio = document.querySelector(`input[name="booking-device"][value="${deviceId}"]`);
+  if (radio) radio.checked = true;
+  renderBookingForm(start.getTime());
+  $('booking-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  $('booking-apartment').value ? $('booking-hours').focus({ preventScroll: true }) : $('booking-apartment').focus({ preventScroll: true });
+}
+
+function renderBookingForm(preferredStart) {
+  const deviceId = selectedDeviceId();
+  const startSelect = $('booking-start');
+  const hoursSelect = $('booking-hours');
+  const previousStart = preferredStart ?? Number(startSelect.value);
+  const previousHours = Number(hoursSelect.value) || 1;
+  const nowHour = floorHour(new Date());
+  const known = state.loadedDayKey === dayKey(state.day);
+
+  const options = hoursOfDay(state.day)
+    .filter((h) => h >= nowHour)
+    .map((h) => {
+      const busy = known && deviceId !== null && isBusy(deviceId, h, new Date(h.getTime() + HOUR));
+      return el('option', { value: String(h.getTime()), disabled: busy, text: busy ? `${fmtTime(h)} (varattu)` : fmtTime(h) });
+    });
+
+  const free = options.filter((o) => !o.disabled);
+  if (!free.length) {
+    startSelect.replaceChildren(el('option', { value: '', text: options.length ? 'Ei vapaita aikoja' : 'Päivä on mennyt' }));
+  } else {
+    startSelect.replaceChildren(...options);
+    const keep = free.find((o) => Number(o.value) === previousStart);
+    startSelect.value = (keep || free[0]).value;
+  }
+
+  const start = startSelect.value ? new Date(Number(startSelect.value)) : null;
+  const hourOptions = [];
+  for (let n = 1; n <= MAX_HOURS; n++) {
+    const end = start ? new Date(start.getTime() + n * HOUR) : null;
+    const busy = !start || (known && isBusy(deviceId, start, end));
+    hourOptions.push(el('option', { value: String(n), disabled: busy, text: busy && start ? `${hoursLabel(n)} (ei vapaana)` : hoursLabel(n) }));
+  }
+  hoursSelect.replaceChildren(...hourOptions);
+  const validHours = hourOptions.filter((o) => !o.disabled).map((o) => Number(o.value));
+  hoursSelect.value = String(validHours.includes(previousHours) ? previousHours : validHours.at(-1) ?? 1);
+  hoursSelect.disabled = !start;
+  $('booking-submit').disabled = !start;
+
+  renderBookingSummary();
+}
+
+function renderBookingSummary() {
+  const deviceId = selectedDeviceId();
+  const startValue = $('booking-start').value;
+  const node = $('booking-summary');
+  if (!startValue || deviceId === null) {
+    node.textContent = 'Valitulle päivälle ei ole enää vapaita aikoja. Valitse toinen päivä.';
+    return;
+  }
+  const start = new Date(Number(startValue));
+  const end = new Date(start.getTime() + Number($('booking-hours').value) * HOUR);
+  node.textContent = `Varaat: ${deviceName(deviceId)}, ${fmtDayShort(start)} klo ${fmtRange(start, end)}.`;
+}
+
+const APARTMENT_PATTERN = /^[0-9A-ZÅÄÖ][0-9A-ZÅÄÖ -]{0,9}$/;
+
+async function onBookingSubmit(event) {
+  event.preventDefault();
+  showFieldError('booking-error', '');
+
+  const deviceId = selectedDeviceId();
+  const apartment = $('booking-apartment').value.trim().replace(/\s+/g, ' ').toUpperCase();
+  const startValue = $('booking-start').value;
+  const hours = Number($('booking-hours').value);
+
+  if (deviceId === null) return showFieldError('booking-error', 'Valitse laite.');
+  if (!startValue) return showFieldError('booking-error', 'Valitse alkamisaika.');
+  if (!apartment) {
+    $('booking-apartment').focus();
+    return showFieldError('booking-error', 'Kirjoita asunnon numero.');
+  }
+  if (!APARTMENT_PATTERN.test(apartment) || !/[0-9]/.test(apartment)) {
+    $('booking-apartment').focus();
+    return showFieldError('booking-error', 'Tarkista asunnon numero (esimerkiksi 9 tai A 12).');
+  }
+
+  const start = new Date(Number(startValue));
+  const end = new Date(start.getTime() + hours * HOUR);
+  const button = $('booking-submit');
+  button.disabled = true;
+  button.textContent = 'Tallennetaan…';
+  try {
+    const rows = await rpc('create_booking', {
+      p_token: state.token,
+      p_device_id: deviceId,
+      p_apartment_number: apartment,
+      p_start_at: start.toISOString(),
+      p_hours: hours,
+    });
+    if (!Array.isArray(rows) || rows.length !== 1) throw new ApiError('Varauksen tallennus epäonnistui. Yritä uudelleen.', 'unexpected', 0);
+    const saved = parseBooking(rows[0]);
+    storageSet(STORAGE.apartment, saved.apartment);
+    showMessage(`Varaus tallennettu: ${deviceName(saved.deviceId)}, ${fmtDayShort(saved.start)} klo ${fmtRange(saved.start, saved.end)}, asunto ${saved.apartment}.`);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    await refresh();
+  } catch (error) {
+    if (error instanceof ApiError && error.isSessionError) return onSessionExpired();
+    showFieldError('booking-error', error.message);
+    if (error instanceof ApiError && error.isConflict) await refresh();
+  } finally {
+    button.textContent = 'Varaa';
+    button.disabled = !$('booking-start').value;
+  }
+}
+
+// ---------------------------------------------------------------------
+// Omat varaukset
+// ---------------------------------------------------------------------
+
+function renderOwnBookings() {
+  const container = $('own-list');
+  if (!state.lastUpdated) {
+    container.replaceChildren(el('p', { className: 'empty', text: 'Ladataan…' }));
+    return;
+  }
+  if (!state.myBookings.length) {
+    container.replaceChildren(el('p', { className: 'empty', text: 'Ei tulevia varauksia tällä laitteella.' }));
+    return;
+  }
+
+  const now = new Date();
+  container.replaceChildren(el('div', { className: 'own-list' }, state.myBookings.map((b) => {
+    const ongoing = b.start <= now && now < b.end;
+    const canExtend = ongoing && now.getTime() >= b.end.getTime() - HOUR;
+    return el('article', { className: 'own-item', 'aria-label': `${deviceName(b.deviceId)} ${fmtDayShort(b.start)} ${fmtRange(b.start, b.end)}` },
+      el('dl', {},
+        el('div', {}, el('dt', { text: 'Laite' }), el('dd', { text: deviceName(b.deviceId) })),
+        el('div', {}, el('dt', { text: 'Päivä' }), el('dd', { text: fmtDayShort(b.start) })),
+        el('div', {}, el('dt', { text: 'Asunto' }), el('dd', { text: b.apartment })),
+        el('div', {}, el('dt', { text: 'Varausaika' }), el('dd', { text: fmtRange(b.start, b.end) + (ongoing ? ' (käynnissä)' : '') }))),
+      el('div', { className: 'actions' },
+        canExtend && el('button', { type: 'button', className: 'button small', text: 'Jatka tunnilla', onclick: (e) => onExtend(b, e.currentTarget) }),
+        el('button', { type: 'button', className: 'button small danger', text: 'Peru varaus', onclick: (e) => onCancel(b, e.currentTarget) })));
+  })));
+}
+
+async function onCancel(booking, button) {
+  const label = `${deviceName(booking.deviceId)} ${fmtDayShort(booking.start)} klo ${fmtRange(booking.start, booking.end)}`;
+  if (!window.confirm(`Perutaanko varaus?\n${label}`)) return;
+  button.disabled = true;
+  button.textContent = 'Perutaan…';
+  try {
+    await rpc('cancel_booking', { p_token: state.token, p_booking_id: booking.id });
+    showMessage(`Varaus peruttu: ${label}. Aika on nyt vapaana muille.`);
+  } catch (error) {
+    if (error instanceof ApiError && error.isSessionError) return onSessionExpired();
+    showMessage(error.message, 'error');
+  }
+  await refresh();
+}
+
+async function onExtend(booking, button) {
+  button.disabled = true;
+  button.textContent = 'Jatketaan…';
+  try {
+    const rows = await rpc('extend_booking', { p_token: state.token, p_booking_id: booking.id });
+    const updated = parseBooking(rows[0]);
+    showMessage(`Vuoroa jatkettu. ${deviceName(updated.deviceId)} on varattu klo ${fmtTime(updated.end)} asti.`);
+  } catch (error) {
+    if (error instanceof ApiError && error.isSessionError) return onSessionExpired();
+    showMessage(error.message, 'error');
+  }
+  await refresh();
+}
+
+// ---------------------------------------------------------------------
+// Käynnistys
+// ---------------------------------------------------------------------
+
+function init() {
+  $('login-form').addEventListener('submit', onLogin);
+  $('logout-button').addEventListener('click', onLogout);
+  $('prev-day').addEventListener('click', () => setDay(addDays(state.day, -1)));
+  $('next-day').addEventListener('click', () => setDay(addDays(state.day, 1)));
+  $('today-button').addEventListener('click', () => setDay(new Date()));
+  $('date-input').addEventListener('change', (e) => { const d = parseDayKey(e.target.value); if (d) setDay(d); });
+  $('booking-date').addEventListener('change', (e) => { const d = parseDayKey(e.target.value); if (d) setDay(d); });
+  $('booking-start').addEventListener('change', () => renderBookingForm());
+  $('booking-hours').addEventListener('change', renderBookingSummary);
+  $('booking-form').addEventListener('submit', onBookingSubmit);
+  $('booking-form').addEventListener('change', () => showFieldError('booking-error', ''));
+  $('booking-apartment').value = storageGet(STORAGE.apartment) || '';
+
+  if (!isConfigured) {
+    showMessage('Sovellusta ei ole vielä määritetty: js/config.js puuttuu tai sisältää esimerkkiarvot.', 'error');
+    return;
+  }
+
+  const valid = state.token && state.expiresAt && new Date(state.expiresAt) > new Date();
+  if (valid) enterApp();
+  else showLogin();
+}
+
+init();

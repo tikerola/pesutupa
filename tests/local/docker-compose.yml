@@ -1,0 +1,32 @@
+# Paikallinen testiympäristö: PostgreSQL + PostgREST (sama REST-kerros kuin Supabasessa).
+#   docker compose -f tests/local/docker-compose.yml up -d
+# REST-rajapinta: http://localhost:54321  (vastaa Supabasen polkua /rest/v1)
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "54322:5432"
+    volumes:
+      - ./00_supabase_stub.sql:/docker-entrypoint-initdb.d/00_supabase_stub.sql:ro
+      - ../../supabase/migrations/20261027000000_pesutupa_init.sql:/docker-entrypoint-initdb.d/10_init.sql:ro
+      - ./20_seed_password.sql:/docker-entrypoint-initdb.d/20_seed_password.sql:ro
+      - ../db:/tests:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      retries: 30
+
+  rest:
+    image: postgrest/postgrest:v12.2.8
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://authenticator:authenticator@db:5432/postgres
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_SERVER_PORT: 3000
+    ports:
+      - "54321:3000"

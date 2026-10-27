@@ -1,0 +1,6 @@
+# Paikallinen tai julkaisussa generoitava asetustiedosto
+js/config.js
+node_modules/
+.env
+.env.*
+.playwright-mcp/

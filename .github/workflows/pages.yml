@@ -1,0 +1,66 @@
+# Julkaisee sovelluksen GitHub Pagesiin. js/config.js luodaan repositorion
+# muuttujista (Settings → Secrets and variables → Actions → Variables):
+#   SUPABASE_URL  esim. https://abcd1234.supabase.co
+#   SUPABASE_KEY  anon- tai publishable-avain (julkinen avain, EI service_role)
+name: Julkaise GitHub Pagesiin
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tarkista asetukset
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ vars.SUPABASE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
+            echo "::error::Aseta repositorion muuttujat SUPABASE_URL ja SUPABASE_KEY."
+            exit 1
+          fi
+          case "$SUPABASE_KEY" in
+            sb_secret_*) echo "::error::SUPABASE_KEY on secret-avain. Käytä anon- tai publishable-avainta."; exit 1 ;;
+          esac
+          node -e '
+            const k = process.env.SUPABASE_KEY;
+            if (k.startsWith("eyJ")) {
+              const role = JSON.parse(Buffer.from(k.split(".")[1], "base64url").toString()).role;
+              if (role !== "anon") { console.log("::error::SUPABASE_KEY ei ole anon-avain (role=" + role + "). Älä käytä service_role-avainta selaimessa."); process.exit(1); }
+            }'
+
+      - name: Kokoa julkaistavat tiedostot
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ vars.SUPABASE_KEY }}
+        run: |
+          mkdir -p _site/js _site/css
+          cp index.html _site/
+          cp css/*.css _site/css/
+          cp js/app.js js/api.js _site/js/
+          node -e 'const c={supabaseUrl:process.env.SUPABASE_URL,supabaseKey:process.env.SUPABASE_KEY};require("fs").writeFileSync("_site/js/config.js","window.PESUTUPA_CONFIG = "+JSON.stringify(c,null,2)+";\n")'
+          touch _site/.nojekyll
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
