@@ -19,6 +19,8 @@ const state = {
   day: startOfDay(new Date()),
   filter: storageGet(STORAGE.filter) || 'all',
   devices: [],
+  openHour: 8,
+  closeHour: 22,
   bookings: [],
   loadedDayKey: null,
   myBookings: [],
@@ -74,10 +76,18 @@ function isSameDay(a, b) {
 function floorSlot(d) {
   return new Date(Math.floor(d.getTime() / SLOT) * SLOT);
 }
-function slotsOfDay(day) {
+// Varattavan ajan alku ja loppu valitulle päivälle (esim. klo 8.00 ja 22.00).
+function opensAt(day) {
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate(), state.openHour);
+}
+function closesAt(day) {
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate(), state.closeHour);
+}
+// Varattavat alkamisajat: puolen tunnin välein aukioloajan sisällä.
+function startSlotsOfDay(day) {
   const result = [];
-  const end = addDays(day, 1).getTime();
-  for (let t = day.getTime(); t < end; t += SLOT) result.push(new Date(t));
+  const end = closesAt(day).getTime();
+  for (let t = opensAt(day).getTime(); t < end; t += SLOT) result.push(new Date(t));
   return result;
 }
 function dayKey(d) {
@@ -247,7 +257,15 @@ async function enterApp() {
 
   if (!state.devices.length) {
     try {
-      state.devices = (await rpc('get_devices', { p_token: state.token })).map((d) => ({ id: Number(d.id), name: d.name }));
+      const [devices, hours] = await Promise.all([
+        rpc('get_devices', { p_token: state.token }),
+        rpc('get_booking_hours', { p_token: state.token }),
+      ]);
+      state.devices = devices.map((d) => ({ id: Number(d.id), name: d.name }));
+      if (hours && hours[0]) {
+        state.openHour = Number(hours[0].open_hour);
+        state.closeHour = Number(hours[0].close_hour);
+      }
     } catch (error) {
       if (error instanceof ApiError && error.isSessionError) return onSessionExpired();
       $('calendars').replaceChildren(
@@ -338,6 +356,7 @@ function render() {
 }
 
 function renderDate() {
+  $('booking-hours-hint').textContent = `Varattavissa klo ${state.openHour}.00–${state.closeHour}.00.`;
   $('date-input').value = dayKey(state.day);
   $('date-label').textContent = fmtDayLong(state.day);
   $('booking-date').value = dayKey(state.day);
@@ -389,13 +408,17 @@ function renderDeviceControls() {
 function buildRows(deviceId) {
   const dayStart = state.day;
   const dayEnd = addDays(state.day, 1);
+  const open = opensAt(state.day);
+  const close = closesAt(state.day);
   const nowSlot = floorSlot(new Date());
   const rows = [];
 
-  // Vapaat ajat näytetään vain siltä osin kuin ne ovat vielä varattavissa.
+  // Vapaat ajat näytetään vain siltä osin kuin ne ovat vielä varattavissa
+  // ja osuvat varattavaan aikaan.
   const pushGap = (s, e) => {
-    const start = s < nowSlot ? nowSlot : s;
-    if (e > start) rows.push({ type: 'free', start, end: e });
+    const start = new Date(Math.max(s, nowSlot, open));
+    const end = new Date(Math.min(e, close));
+    if (end > start) rows.push({ type: 'free', start, end });
   };
 
   const list = state.bookings
@@ -510,7 +533,7 @@ function renderBookingForm(preferredStart) {
   const nowSlot = floorSlot(new Date());
   const known = state.loadedDayKey === dayKey(state.day);
 
-  const options = slotsOfDay(state.day)
+  const options = startSlotsOfDay(state.day)
     .filter((h) => h >= nowSlot)
     .map((h) => {
       const busy = known && deviceId !== null && isBusy(deviceId, h, new Date(h.getTime() + SLOT));
@@ -519,7 +542,7 @@ function renderBookingForm(preferredStart) {
 
   const free = options.filter((o) => !o.disabled);
   if (!free.length) {
-    startSelect.replaceChildren(el('option', { value: '', text: options.length ? 'Ei vapaita aikoja' : 'Päivä on mennyt' }));
+    startSelect.replaceChildren(el('option', { value: '', text: options.length ? 'Ei vapaita aikoja' : 'Ei enää varattavissa' }));
   } else {
     startSelect.replaceChildren(...options);
     const keep = free.find((o) => Number(o.value) === previousStart);
@@ -530,8 +553,10 @@ function renderBookingForm(preferredStart) {
   const durationOptions = [];
   for (let minutes = 30; minutes <= MAX_MINUTES; minutes += 30) {
     const end = start ? new Date(start.getTime() + minutes * 60 * 1000) : null;
-    const busy = !start || (known && isBusy(deviceId, start, end));
-    durationOptions.push(el('option', { value: String(minutes), disabled: busy, text: busy && start ? `${durationLabel(minutes)} (ei vapaana)` : durationLabel(minutes) }));
+    const afterClose = Boolean(start) && end > closesAt(state.day);
+    const busy = !start || afterClose || (known && isBusy(deviceId, start, end));
+    const note = afterClose ? ` (yli klo ${state.closeHour}.00)` : busy && start ? ' (ei vapaana)' : '';
+    durationOptions.push(el('option', { value: String(minutes), disabled: busy, text: durationLabel(minutes) + note }));
   }
   durationSelect.replaceChildren(...durationOptions);
   const valid = durationOptions.filter((o) => !o.disabled).map((o) => Number(o.value));
@@ -624,7 +649,7 @@ function renderOwnBookings() {
   const now = new Date();
   container.replaceChildren(el('div', { className: 'own-list' }, state.myBookings.map((b) => {
     const ongoing = b.start <= now && now < b.end;
-    const canExtend = ongoing && now.getTime() >= b.end.getTime() - HOUR;
+    const canExtend = ongoing && now.getTime() >= b.end.getTime() - HOUR && b.end.getTime() + HOUR <= closesAt(startOfDay(b.start)).getTime();
     return el('article', { className: 'own-item', 'aria-label': `${deviceName(b.deviceId)} ${fmtDayShort(b.start)} ${fmtRange(b.start, b.end)}` },
       el('dl', {},
         el('div', {}, el('dt', { text: 'Laite' }), el('dd', { text: deviceName(b.deviceId) })),
@@ -675,7 +700,6 @@ function init() {
   $('logout-button').addEventListener('click', onLogout);
   $('prev-day').addEventListener('click', () => setDay(addDays(state.day, -1)));
   $('next-day').addEventListener('click', () => setDay(addDays(state.day, 1)));
-  $('today-button').addEventListener('click', () => setDay(new Date()));
   $('date-input').addEventListener('change', (e) => { const d = parseDayKey(e.target.value); if (d) setDay(d); });
   $('booking-date').addEventListener('change', (e) => { const d = parseDayKey(e.target.value); if (d) setDay(d); });
   $('booking-start').addEventListener('change', () => renderBookingForm());

@@ -39,6 +39,7 @@ GitHub Pages ei suorita palvelinkoodia, joten kaikki tarkistukset tehdään tiet
 | Kesto ei voi olla nolla tai negatiivinen | `CHECK (end_at > start_at)` |
 | Ei päällekkäisyyksiä samalla laitteella | exclusion constraint (laitekohtainen) |
 | Pesukone ja kuivuri varataan erikseen | päällekkäisyys tarkistetaan laitteen mukaan |
+| Varattava aika klo 8.00–22.00 Suomen aikaa (myös jatkaminen) | `create_booking`, `extend_booking` (asetukset `open_hour`, `close_hour`) |
 | Mennyttä aikaa ei voi varata (kuluvan puolen tunnin jakson voi) | `create_booking` |
 | Saman asunnon vierekkäiset varaukset samalle laitteelle yhteensä enintään 3 h | `create_booking` |
 | Jatkaminen tunti kerrallaan, vain vuoron viimeisen tunnin aikana ja vain jos seuraava tunti on vapaa | `extend_booking` ja exclusion constraint |
@@ -65,6 +66,7 @@ Aja kansion `supabase/migrations/` tiedostot **aikajärjestyksessä**, kukin oma
 
 1. [`20261027000000_pesutupa_init.sql`](supabase/migrations/20261027000000_pesutupa_init.sql): taulut, funktiot ja oikeudet
 2. [`20261028000000_half_hour_slots.sql`](supabase/migrations/20261028000000_half_hour_slots.sql): puolen tunnin varausjaksot
+3. [`20261028010000_booking_hours.sql`](supabase/migrations/20261028010000_booking_hours.sql): varattava aika klo 8–22
 
 Avaa projektissa **SQL Editor** → **New query**, liitä tiedoston koko sisältö ja paina **Run**. Tulokseksi pitää tulla *Success. No rows returned*.
 
@@ -172,6 +174,11 @@ delete from app_private.bookings where id = '<varauksen id>';
 update app_private.devices set active = false where name = 'Kuivuri';
 ```
 
+**Muuta varattavaa aikaa** (esim. klo 7–23). Käyttöliittymä lukee ajat tietokannasta:
+```sql
+update app_private.settings set open_hour = 7, close_hour = 23;
+```
+
 **Muuta istunnon kestoa tai sitä, kuinka pitkälle etukäteen voi varata:**
 ```sql
 update app_private.settings set session_days = 30, booking_horizon_days = 90;
@@ -188,7 +195,7 @@ update app_private.settings set session_days = 30, booking_horizon_days = 90;
 `tests/local/docker-compose.yml` käynnistää PostgreSQL:n ja PostgRESTin, joka on sama REST-kerros kuin Supabasessa. Migraatio ajetaan automaattisesti, ja testisalasanaksi asetetaan `testisalasana-123`.
 
 ```bash
-# Tietokannan sääntö- ja käyttöoikeustestit (53 testiä)
+# Tietokannan sääntö- ja käyttöoikeustestit (60 testiä)
 bash tests/run-db-tests.sh --fresh
 
 # REST-rajapinnan testit: 20 rinnakkaista varausyritystä samaan aikaan + käyttöoikeudet

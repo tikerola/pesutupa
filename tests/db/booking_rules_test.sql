@@ -16,6 +16,9 @@ reset role;
 delete from app_private.bookings;
 delete from app_private.sessions;
 delete from app_private.login_failures;
+-- Kellonaikaan sidotut testit (esim. vuoron jatkaminen nyt) toimivat mihin
+-- vuorokauden aikaan tahansa; aukioloajat testataan erikseen alempana.
+update app_private.settings set open_hour = 0, close_hour = 24;
 
 drop schema if exists test cascade;
 create schema test;
@@ -49,10 +52,10 @@ end $$;
 
 grant execute on all functions in schema test to anon;
 
--- Aikapisteet: kuluva tasatunti, kuluvan puolen tunnin jakson alku ja huominen sama tunti.
+-- Aikapisteet: kuluva tasatunti, kuluvan puolen tunnin jakson alku ja huomenna klo 10 Suomen aikaa.
 select date_trunc('hour', now()) as h0,
        to_timestamp(floor(extract(epoch from now()) / 1800) * 1800) as s0,
-       date_trunc('hour', now()) + interval '1 day' as base
+       ((now() at time zone 'Europe/Helsinki')::date + 1 + time '10:00') at time zone 'Europe/Helsinki' as base
 \gset
 
 -- Kaikki testit ajetaan selaimen roolina (anon).
@@ -130,6 +133,22 @@ select id as a_now2 from public.create_booking(:'tok_a', 2, '9', :'s0'::timestam
 select test.ok((select count(*) from public.create_booking(:'tok_b', 2, '12', :'s0'::timestamptz + interval '1 hour', 60)) = 1, 'toinen asunto varaa seuraavan tunnin');
 select test.expect_error(format('select * from public.extend_booking(%L, %L)', :'tok_a', :'a_now2'), '23P01', 'jatkaminen estyy, jos seuraava tunti on varattu');
 
+\echo '--- Varattava aika klo 8–22 ---'
+reset role;
+update app_private.settings set open_hour = 8, close_hour = 22;
+set role anon;
+select test.ok((select open_hour = 8 and close_hour = 22 from public.get_booking_hours(:'tok_a')), 'aukioloajat luettavissa (8–22)');
+select test.expect_error(format('select * from public.create_booking(%L, 2, %L, %L::timestamptz - interval ''2 hours 30 minutes'', 60)', :'tok_b', '40', :'base'), 'P0001', 'klo 7.30 alkava varaus hylätään');
+select test.ok((select count(*) from public.create_booking(:'tok_b', 2, '40', :'base'::timestamptz - interval '2 hours', 60)) = 1, 'klo 8.00 alkava varaus onnistuu');
+select test.ok((select count(*) from public.create_booking(:'tok_b', 2, '41', :'base'::timestamptz + interval '10 hours 30 minutes', 90)) = 1, 'klo 22.00 päättyvä varaus onnistuu');
+select test.expect_error(format('select * from public.create_booking(%L, 1, %L, %L::timestamptz + interval ''11 hours'', 90)', :'tok_b', '40', :'base'), 'P0001', 'klo 22 jälkeen päättyvä varaus hylätään');
+select test.expect_error(format('select * from public.create_booking(%L, 1, %L, %L::timestamptz + interval ''12 hours'', 60)', :'tok_b', '40', :'base'), 'P0001', 'klo 22 alkava varaus hylätään');
+select public.cancel_booking(:'tok_b', b.id) from public.my_bookings(:'tok_b') b where b.apartment_number in ('40', '41');
+select test.expect_error(format('select * from public.get_booking_hours(%L)', repeat('0', 64)), '28000', 'aukioloajat eivät näy ilman istuntoa');
+reset role;
+update app_private.settings set open_hour = 0, close_hour = 24;
+set role anon;
+
 \echo '--- Uloskirjautuminen ja istunnon uusiminen ---'
 select public.login('testisalasana-123', :'tok_a') ->> 'token' as tok_a2 \gset
 select test.ok((select count(*) from public.my_bookings(:'tok_a2')) = 2, 'uusittu istunto säilyttää omat varaukset');
@@ -145,5 +164,6 @@ reset role;
 delete from app_private.bookings;
 delete from app_private.sessions;
 delete from app_private.login_failures;
+update app_private.settings set open_hour = 8, close_hour = 22;
 drop schema test cascade;
 \echo '=== Kaikki tietokantatestit läpäisty ==='

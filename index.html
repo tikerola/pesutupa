@@ -48,7 +48,6 @@
           <button type="button" class="button icon" id="next-day" aria-label="Seuraava päivä">›</button>
         </div>
         <div class="controls-row">
-          <button type="button" class="button" id="today-button">Tänään</button>
           <fieldset class="segmented" id="device-filter">
             <legend class="visually-hidden">Näytettävä laite</legend>
             <!-- täytetään ohjelmallisesti -->
@@ -63,6 +62,7 @@
 
       <section class="card" id="booking-section" aria-labelledby="booking-heading">
         <h2 id="booking-heading">Uusi varaus</h2>
+        <p class="hint" id="booking-hours-hint"></p>
         <form id="booking-form" novalidate>
           <fieldset class="radio-group" id="booking-device">
             <legend>Laite</legend>

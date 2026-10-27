@@ -66,7 +66,8 @@ const tokB = b.data.token;
 // --- Rinnakkaiset varausyritykset samaan aikaan ---
 const start = new Date();
 start.setUTCDate(start.getUTCDate() + 55 + Math.floor(Math.random() * 30));
-start.setUTCHours(Math.floor(Math.random() * 20), Math.random() < 0.5 ? 0 : 30, 0, 0);
+// 6–15 UTC = noin 8–19 Suomen aikaa, joten 2 tunnin varaus mahtuu klo 8–22 väliin.
+start.setUTCHours(6 + Math.floor(Math.random() * 10), Math.random() < 0.5 ? 0 : 30, 0, 0);
 
 const attempts = await Promise.all(
   Array.from({ length: PARALLEL }, (_, i) =>
