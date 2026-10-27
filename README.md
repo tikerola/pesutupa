@@ -28,7 +28,8 @@ GitHub Pages ei suorita palvelinkoodia, joten kaikki tarkistukset tehdään tiet
 - **Taulut ovat skeemassa `app_private`**, jota Supabasen REST-rajapinta ei julkaise. Selaimen rooleilla (`anon`, `authenticated`) ei ole niihin mitään oikeuksia, ja jokaisella taululla on lisäksi **RLS päällä** ilman sallivia politiikkoja.
 - **Selain voi kutsua vain** julkisen skeeman funktioita `login`, `logout`, `get_devices`, `list_bookings`, `my_bookings`, `create_booking`, `extend_booking` ja `cancel_booking`. Jokainen niistä tarkistaa istunnon ja säännöt.
 - **Päällekkäisyydet** estää PostgreSQL:n exclusion constraint (`bookings_no_overlap`). Se on atominen, joten samanaikaisista yrityksistä vain yksi voi onnistua.
-- **Peruminen ja jatkaminen:** varaus kytketään istuntoon eli laitteeseen, jolla se tehtiin. Vain sama laite voi perua tai jatkaa varauksen. Pelkkä varaus-ID ei riitä.
+- **Poistaminen:** kuka tahansa kirjautunut käyttäjä voi poistaa minkä tahansa tulevan tai käynnissä olevan varauksen. Käyttöliittymä kysyy ensin vahvistuksen ("Haluatko varmasti poistaa asunnon X varauksen?"). Ilman kirjautumista poisto ei onnistu, eikä päättyneitä varauksia voi poistaa.
+- **Jatkaminen:** varaus kytketään istuntoon eli laitteeseen, jolla se tehtiin. Vain sama laite voi jatkaa vuoroa.
 - **Selaimessa käytetään vain julkista anon- tai publishable-avainta.** Sillä ei pääse tauluihin käsiksi, koska oikeudet on rajattu tietokannassa.
 
 ### Tietokannassa tarkistettavat säännöt
@@ -67,6 +68,7 @@ Aja kansion `supabase/migrations/` tiedostot **aikajärjestyksessä**, kukin oma
 1. [`20261027000000_pesutupa_init.sql`](supabase/migrations/20261027000000_pesutupa_init.sql): taulut, funktiot ja oikeudet
 2. [`20261028000000_half_hour_slots.sql`](supabase/migrations/20261028000000_half_hour_slots.sql): puolen tunnin varausjaksot
 3. [`20261028010000_booking_hours.sql`](supabase/migrations/20261028010000_booking_hours.sql): varattava aika klo 8–22
+4. [`20261028020000_cancel_any_booking.sql`](supabase/migrations/20261028020000_cancel_any_booking.sql): kuka tahansa kirjautunut voi poistaa varauksen
 
 Avaa projektissa **SQL Editor** → **New query**, liitä tiedoston koko sisältö ja paina **Run**. Tulokseksi pitää tulla *Success. No rows returned*.
 
@@ -143,7 +145,7 @@ Repositorio voi olla julkinen, koska siinä ei ole salaisuuksia. Ilmaisella GitH
 
 ## 4. Ylläpito
 
-Ylläpito tehdään Supabasen SQL Editorissa. Tavallisella käyttäjätilalla muiden varauksia ei voi muuttaa.
+Ylläpito tehdään Supabasen SQL Editorissa. Tulevia varauksia voi poistaa myös suoraan sovelluksesta.
 
 **Vaihda salasana** (vanhat kirjautumiset jäävät voimaan):
 ```sql
@@ -164,7 +166,7 @@ from app_private.bookings b join app_private.devices d on d.id = b.device_id
 where b.end_at > now() order by b.start_at;
 ```
 
-**Poista varaus ylläpitäjänä** (esim. unohtunut varaus):
+**Poista varaus SQL:llä** (esim. jos sovellukseen ei pääse):
 ```sql
 delete from app_private.bookings where id = '<varauksen id>';
 ```
@@ -195,7 +197,7 @@ update app_private.settings set session_days = 30, booking_horizon_days = 90;
 `tests/local/docker-compose.yml` käynnistää PostgreSQL:n ja PostgRESTin, joka on sama REST-kerros kuin Supabasessa. Migraatio ajetaan automaattisesti, ja testisalasanaksi asetetaan `testisalasana-123`.
 
 ```bash
-# Tietokannan sääntö- ja käyttöoikeustestit (60 testiä)
+# Tietokannan sääntö- ja käyttöoikeustestit (61 testiä)
 bash tests/run-db-tests.sh --fresh
 
 # REST-rajapinnan testit: 20 rinnakkaista varausyritystä samaan aikaan + käyttöoikeudet
@@ -226,7 +228,7 @@ PESUTUPA_PASSWORD='<yhteinen salasana>' \
 node tests/api_test.mjs
 ```
 
-Testi varmistaa, että taulut eivät näy REST-rajapinnassa, salasanaa ei voi vaihtaa rajapinnan kautta, väärä salasana hylätään, 20 samanaikaisesta varausyrityksestä vain yksi onnistuu, pesukoneen ja kuivurin voi varata samalle ajalle ja toisen laitteen varausta ei voi perua.
+Testi varmistaa, että taulut eivät näy REST-rajapinnassa, salasanaa ei voi vaihtaa rajapinnan kautta, väärä salasana hylätään, 20 samanaikaisesta varausyrityksestä vain yksi onnistuu, pesukoneen ja kuivurin voi varata samalle ajalle ja varausta ei voi poistaa ilman kirjautumista.
 
 > `tests/db/booking_rules_test.sql` tyhjentää varaukset ja istunnot. **Älä aja sitä tuotantokantaan.**
 
@@ -235,8 +237,10 @@ Testi varmistaa, että taulut eivät näy REST-rajapinnassa, salasanaa ei voi va
 - [ ] Kirjautuminen väärällä salasanalla näyttää virheen, ja oikealla salasanalla pääsee kalenteriin.
 - [ ] Päivien selaus (‹ ›, päivämäärä, *Tänään*) ja laitevalinta (*Molemmat / Pesukone / Kuivuri*) toimivat.
 - [ ] Varauksen tekeminen näyttää onnistumisilmoituksen, ja varaus näkyy kalenterissa ja omissa varauksissa.
-- [ ] Toisella laitteella (esim. puhelin ja tietokone) näkyy sama varaus noin 30 sekunnin kuluessa. Varausta ei voi perua toiselta laitteelta.
-- [ ] Varauksen peruminen näyttää vahvistuksen, ja aika vapautuu.
+- [ ] Toisella laitteella (esim. puhelin ja tietokone) näkyy sama varaus noin 30 sekunnin kuluessa.
+- [ ] Varauksen poisto kalenterista kysyy vahvistuksen ja kertoo asunnon numeron.
+- [ ] Päivämäärät näkyvät muodossa 17.10.2026, ja kentän napautus avaa kalenterivalitsimen.
+- [ ] Varauksen poisto näyttää vahvistuksen, ja aika vapautuu.
 - [ ] Sovellus toimii puhelimella ilman sivuttaisvieritystä.
 
 ---
@@ -261,8 +265,9 @@ tests/local/                   Paikallinen testiympäristö (Docker Compose)
 
 ## 7. Tunnetut rajoitukset
 
-- **Varauksen voi perua tai jatkaa vain laitteelta, jolla se tehtiin.** Uudelleenkirjautuminen samalla laitteella säilyttää omat varaukset myös 30 päivän istunnon vanhennuttua. Jos laitteen selaintiedot tyhjennetään tai käyttäjä kirjautuu ulos, varauksia ei voi enää perua sillä laitteella. Silloin ylläpitäjä voi poistaa varauksen (kohta 4).
-- **Yhteinen salasana on yhteinen.** Kuka tahansa salasanan tietävä voi tehdä varauksia millä tahansa asunnon numerolla. Jos salasana leviää, vaihda se ja kirjaa laitteet ulos (kohta 4).
+- **"Omat varaukset" ja vuoron jatkaminen ovat laitekohtaisia.** Uudelleenkirjautuminen samalla laitteella säilyttää ne myös 30 päivän istunnon vanhennuttua. Jos selaintiedot tyhjennetään tai käyttäjä kirjautuu ulos, varaus näkyy edelleen kalenterissa ja sen voi poistaa sieltä, mutta vuoroa ei voi enää jatkaa.
+- **Kuka tahansa kirjautunut voi poistaa minkä tahansa varauksen.** Vahvistuskysely estää vahinkopoistot, mutta tahallista poistamista se ei estä.
+- **Yhteinen salasana on yhteinen.** Kuka tahansa salasanan tietävä voi tehdä ja poistaa varauksia millä tahansa asunnon numerolla. Jos salasana leviää, vaihda se ja kirjaa laitteet ulos (kohta 4).
 - **Varaustilanne päivittyy 30 sekunnin välein** sekä aina, kun sivu tulee näkyviin ja varauksen yhteydessä. Tallennus tarkistetaan aina tietokannassa, joten vanhentunut näkymä ei voi aiheuttaa päällekkäistä varausta. Jos päivitys epäonnistuu, näkymässä näytetään varoitus.
 - **Kirjautumisyritysten rajoitus** tunnistaa asiakkaan Supabasen välittämästä IP-osoitteesta. Kokonaisraja (200 virhettä / 15 min) suojaa myös hajautetulta arvaamiselta.
 - **Ajat puolen tunnin jaksoissa:** järjestelmä olettaa aikavyöhykkeen, jonka poikkeama UTC:stä on tasatunteja (Suomi täyttää tämän).

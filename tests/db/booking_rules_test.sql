@@ -115,14 +115,20 @@ select test.ok((select count(*) from public.list_bookings(:'tok_a', :'base'::tim
 select test.ok((select count(*) from public.my_bookings(:'tok_b')) = 3, 'omat varaukset -lista (B)');
 select test.expect_error(format('select * from public.list_bookings(%L, now(), now() + interval ''30 days'')', :'tok_a'), '22023', 'liian pitkä listausväli hylätään');
 
-\echo '--- Peruminen ---'
+\echo '--- Poistaminen ---'
 select id as a_booking from public.my_bookings(:'tok_a') limit 1 \gset
-select test.expect_error(format('select public.cancel_booking(%L, %L)', :'tok_b', :'a_booking'), 'P0001', 'toisen laitteen varausta ei voi perua');
-select test.expect_error(format('select public.cancel_booking(%L, %L)', repeat('0', 64), :'a_booking'), '28000', 'varaus-ID ilman istuntoa ei riitä perumiseen');
-select test.ok((select count(*) from public.list_bookings(:'tok_a', :'base'::timestamptz - interval '1 day', :'base'::timestamptz + interval '1 day') where id = :'a_booking') = 1, 'varaus on yhä olemassa epäonnistuneen perumisen jälkeen');
-select public.cancel_booking(:'tok_a', :'a_booking');
-select test.ok((select count(*) from public.my_bookings(:'tok_a')) = 0, 'oma varaus peruttu');
-select test.ok((select count(*) from public.create_booking(:'tok_b', 1, '12', :'base'::timestamptz + interval '1 hour', 120)) = 1, 'peruttu aika vapautuu muille');
+select test.expect_error(format('select public.cancel_booking(%L, %L)', repeat('0', 64), :'a_booking'), '28000', 'varaus-ID ilman istuntoa ei riitä poistoon');
+select test.ok((select count(*) from public.list_bookings(:'tok_a', :'base'::timestamptz - interval '1 day', :'base'::timestamptz + interval '1 day') where id = :'a_booking') = 1, 'varaus on yhä olemassa epäonnistuneen poiston jälkeen');
+select public.cancel_booking(:'tok_b', :'a_booking');
+select test.ok((select count(*) from public.my_bookings(:'tok_a')) = 0, 'toisen laitteen varauksen voi poistaa');
+select test.expect_error(format('select public.cancel_booking(%L, %L)', :'tok_a', :'a_booking'), 'P0001', 'jo poistettua varausta ei voi poistaa uudelleen');
+select test.ok((select count(*) from public.create_booking(:'tok_b', 1, '12', :'base'::timestamptz + interval '1 hour', 120)) = 1, 'poistettu aika vapautuu muille');
+reset role;
+insert into app_private.bookings (device_id, apartment_number, start_at, end_at)
+values (2, '77', :'h0'::timestamptz - interval '3 hours', :'h0'::timestamptz - interval '2 hours')
+returning id as past_booking \gset
+set role anon;
+select test.expect_error(format('select public.cancel_booking(%L, %L)', :'tok_a', :'past_booking'), 'P0001', 'päättynyttä varausta ei voi poistaa');
 
 \echo '--- Vuoron jatkaminen ---'
 select id as a_now from public.create_booking(:'tok_a', 1, '9', :'s0'::timestamptz, 60) \gset

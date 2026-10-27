@@ -100,12 +100,14 @@ const listA = await rpc('list_bookings', { p_token: tokA, p_from: from, p_to: to
 const listB = await rpc('list_bookings', { p_token: tokB, p_from: from, p_to: to });
 check(listA.ok && listB.ok && listA.data.length === listB.data.length && listA.data.length >= 2, 'molemmat laitteet näkevät samat varaukset');
 
-// Peruminen.
+// Poistaminen: kuka tahansa kirjautunut voi poistaa minkä tahansa tulevan varauksen.
 if (winner) {
-  const bad = await rpc('cancel_booking', { p_token: otherToken, p_booking_id: winner.id });
-  check(!bad.ok, 'toisen laitteen varausta ei voi perua');
-  const good = await rpc('cancel_booking', { p_token: winnerToken, p_booking_id: winner.id });
-  check(good.ok, 'oman varauksen peruminen onnistuu');
+  const anonymous = await rpc('cancel_booking', { p_token: 'f'.repeat(64), p_booking_id: winner.id });
+  check(!anonymous.ok && anonymous.data?.code === '28000', 'varausta ei voi poistaa ilman kirjautumista');
+  const other = await rpc('cancel_booking', { p_token: otherToken, p_booking_id: winner.id });
+  check(other.ok, 'toisen laitteen varauksen voi poistaa');
+  const again = await rpc('cancel_booking', { p_token: winnerToken, p_booking_id: winner.id });
+  check(!again.ok, 'poistettua varausta ei voi poistaa uudelleen');
 }
 if (dryer.ok) {
   const r = await rpc('cancel_booking', { p_token: otherToken, p_booking_id: dryer.data[0].id });

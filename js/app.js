@@ -104,6 +104,9 @@ function fmtTime(d) {
 function fmtShortDate(d) {
   return `${d.getDate()}.${d.getMonth() + 1}.`;
 }
+function fmtFullDate(d) {
+  return `${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()}`;
+}
 const weekdayFmt = new Intl.DateTimeFormat('fi-FI', { weekday: 'short' });
 const longDateFmt = new Intl.DateTimeFormat('fi-FI', { weekday: 'long', day: 'numeric', month: 'numeric', year: 'numeric' });
 function fmtDayShort(d) {
@@ -229,11 +232,7 @@ function onSessionExpired() {
 }
 
 async function onLogout() {
-  const count = state.myBookings.length;
-  const question = count
-    ? `Tällä laitteella on ${count} tuleva${count === 1 ? '' : 'a'} varaus${count === 1 ? '' : 'ta'}. Uloskirjautumisen jälkeen et voi enää perua ${count === 1 ? 'sitä' : 'niitä'} tällä laitteella. Kirjaudutaanko ulos?`
-    : 'Kirjaudutaanko ulos?';
-  if (!window.confirm(question)) return;
+  if (!window.confirm('Kirjaudutaanko ulos?')) return;
 
   const token = state.token;
   state.token = null;
@@ -358,6 +357,8 @@ function render() {
 function renderDate() {
   $('booking-hours-hint').textContent = `Varattavissa klo ${state.openHour}.00–${state.closeHour}.00.`;
   $('date-input').value = dayKey(state.day);
+  $('date-input-text').textContent = fmtFullDate(state.day);
+  $('booking-date-text').textContent = fmtFullDate(state.day);
   $('date-label').textContent = fmtDayLong(state.day);
   $('booking-date').value = dayKey(state.day);
   $('booking-date').min = dayKey(new Date());
@@ -479,7 +480,15 @@ function renderCalendars() {
         return el('tr', { className: cls },
           el('td', { className: 'col-apartment', text: b.apartment }),
           el('td', { className: 'col-time', text: fmtRange(b.start, b.end) }),
-          el('td', { className: 'col-status' }, el('span', { className: `status ${statusCls}`, text: status })));
+          el('td', { className: 'col-status' },
+            el('span', { className: 'slot-actions' },
+              el('span', { className: `status ${statusCls}`, text: status }),
+              !ended && el('button', {
+                type: 'button', className: 'button small danger',
+                'aria-label': `Poista asunnon ${b.apartment} varaus ${fmtRange(b.start, b.end)}`,
+                text: 'Poista',
+                onclick: (e) => onCancel(b, e.currentTarget),
+              }))));
       }
       return el('tr', { className: 'slot-free' },
         el('td', { className: 'col-apartment' }, el('span', { 'aria-hidden': 'true', text: '–' })),
@@ -658,18 +667,18 @@ function renderOwnBookings() {
         el('div', {}, el('dt', { text: 'Varausaika' }), el('dd', { text: fmtRange(b.start, b.end) + (ongoing ? ' (käynnissä)' : '') }))),
       el('div', { className: 'actions' },
         canExtend && el('button', { type: 'button', className: 'button small', text: 'Jatka tunnilla', onclick: (e) => onExtend(b, e.currentTarget) }),
-        el('button', { type: 'button', className: 'button small danger', text: 'Peru varaus', onclick: (e) => onCancel(b, e.currentTarget) })));
+        el('button', { type: 'button', className: 'button small danger', text: 'Poista varaus', onclick: (e) => onCancel(b, e.currentTarget) })));
   })));
 }
 
 async function onCancel(booking, button) {
   const label = `${deviceName(booking.deviceId)} ${fmtDayShort(booking.start)} klo ${fmtRange(booking.start, booking.end)}`;
-  if (!window.confirm(`Perutaanko varaus?\n${label}`)) return;
+  if (!window.confirm(`Haluatko varmasti poistaa asunnon ${booking.apartment} varauksen?\n\n${label}`)) return;
   button.disabled = true;
-  button.textContent = 'Perutaan…';
+  button.textContent = 'Poistetaan…';
   try {
     await rpc('cancel_booking', { p_token: state.token, p_booking_id: booking.id });
-    showMessage(`Varaus peruttu: ${label}. Aika on nyt vapaana muille.`);
+    showMessage(`Asunnon ${booking.apartment} varaus poistettu: ${label}. Aika on nyt vapaana.`);
   } catch (error) {
     if (error instanceof ApiError && error.isSessionError) return onSessionExpired();
     showMessage(error.message, 'error');
@@ -700,6 +709,10 @@ function init() {
   $('logout-button').addEventListener('click', onLogout);
   $('prev-day').addEventListener('click', () => setDay(addDays(state.day, -1)));
   $('next-day').addEventListener('click', () => setDay(addDays(state.day, 1)));
+  for (const input of document.querySelectorAll('.date-picker-native')) {
+    // Avaa selaimen kalenterivalitsimen, vaikka itse kenttä on näkymätön.
+    input.addEventListener('click', () => { try { input.showPicker(); } catch { /* ei tukea */ } });
+  }
   $('date-input').addEventListener('change', (e) => { const d = parseDayKey(e.target.value); if (d) setDay(d); });
   $('booking-date').addEventListener('change', (e) => { const d = parseDayKey(e.target.value); if (d) setDay(d); });
   $('booking-start').addEventListener('change', () => renderBookingForm());

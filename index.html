@@ -42,7 +42,10 @@
           <button type="button" class="button icon" id="prev-day" aria-label="Edellinen päivä">‹</button>
           <div class="date-field">
             <label for="date-input" class="visually-hidden">Päivämäärä</label>
-            <input type="date" id="date-input">
+            <div class="date-picker">
+              <span class="date-picker-text" id="date-input-text" aria-hidden="true"></span>
+              <input type="date" id="date-input" class="date-picker-native">
+            </div>
             <span id="date-label" class="date-label"></span>
           </div>
           <button type="button" class="button icon" id="next-day" aria-label="Seuraava päivä">›</button>
@@ -71,7 +74,10 @@
           <div class="form-grid">
             <div>
               <label for="booking-date">Päivä</label>
-              <input type="date" id="booking-date" required>
+              <div class="date-picker">
+                <span class="date-picker-text" id="booking-date-text" aria-hidden="true"></span>
+                <input type="date" id="booking-date" class="date-picker-native" required>
+              </div>
             </div>
             <div>
               <label for="booking-start">Alkamisaika</label>
@@ -94,7 +100,7 @@
 
       <section class="card" id="own-section" aria-labelledby="own-heading">
         <h2 id="own-heading">Omat varaukset</h2>
-        <p class="hint">Tällä laitteella tehdyt tulevat ja käynnissä olevat varaukset. Varauksen voi perua vain laitteelta, jolla se tehtiin.</p>
+        <p class="hint">Tällä laitteella tehdyt tulevat ja käynnissä olevat varaukset. Minkä tahansa varauksen voi poistaa myös kalenterista.</p>
         <div id="own-list"></div>
       </section>
 

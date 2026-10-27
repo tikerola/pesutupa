@@ -124,7 +124,7 @@ Vapaat ajat ja varatut ajat on erotettava visuaalisesti toisistaan. Värien lis�
 - Käyttäjä voi perua oman varauksensa.
 - Perumisen jälkeen aika vapautuu muiden varattavaksi.
 - Perumisesta näytetään vahvistus.
-- Muiden käyttäjien varauksia ei voi perua tavallisella käyttäjätilalla.
+- Kuka tahansa kirjautunut käyttäjä voi poistaa minkä tahansa varauksen. Ennen poistoa kysytään vahvistus, jossa näkyy varauksen asunnon numero (päätetty 27.10.2026; alun perin muiden varauksia ei voinut perua).
 
 ### 15 minuutin sääntö
 
