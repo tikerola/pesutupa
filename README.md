@@ -239,7 +239,7 @@ Testi varmistaa, että taulut eivät näy REST-rajapinnassa, salasanaa ei voi va
 - [ ] Varauksen tekeminen näyttää onnistumisilmoituksen, ja varaus näkyy kalenterissa ja omissa varauksissa.
 - [ ] Toisella laitteella (esim. puhelin ja tietokone) näkyy sama varaus noin 30 sekunnin kuluessa.
 - [ ] Varauksen poisto kalenterista kysyy vahvistuksen ja kertoo asunnon numeron.
-- [ ] Päivämäärät näkyvät muodossa 17.10.2026, ja kentän napautus avaa kalenterivalitsimen.
+- [ ] Päivämäärät näkyvät muodossa 17.10.2026, ja kentän napautus avaa suomenkielisen kalenterin (viikko alkaa maanantaista).
 - [ ] Varauksen poisto näyttää vahvistuksen, ja aika vapautuu.
 - [ ] Sovellus toimii puhelimella ilman sivuttaisvieritystä.
 
@@ -252,6 +252,7 @@ index.html                     Sovelluksen ainoa sivu
 css/styles.css                 Tyylit (mobiili ensin)
 js/app.js                      Käyttöliittymän logiikka
 js/api.js                      Supabasen RPC-kutsut (fetch, ei kirjastoja)
+js/datepicker.js               Suomenkielinen päivämäärävalitsin
 js/config.example.js           Esimerkki asetuksista
 supabase/migrations/…sql       Taulut, rajoitteet, funktiot ja käyttöoikeudet
 tests/db/booking_rules_test.sql  Tietokannan sääntö- ja oikeustestit

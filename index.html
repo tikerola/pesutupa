@@ -41,15 +41,11 @@
         <div class="date-nav">
           <button type="button" class="button icon" id="prev-day" aria-label="Edellinen päivä">‹</button>
           <div class="date-field">
-            <label for="date-input" class="visually-hidden">Päivämäärä</label>
-            <div class="date-picker">
-              <span class="date-picker-text" id="date-input-text" aria-hidden="true"></span>
-              <input type="date" id="date-input" class="date-picker-native">
-            </div>
-            <span id="date-label" class="date-label"></span>
+            <button type="button" class="date-picker" id="date-button"><span id="date-button-text"></span></button>
           </div>
           <button type="button" class="button icon" id="next-day" aria-label="Seuraava päivä">›</button>
         </div>
+        <p id="date-label" class="date-label"></p>
         <div class="controls-row">
           <fieldset class="segmented" id="device-filter">
             <legend class="visually-hidden">Näytettävä laite</legend>
@@ -73,10 +69,9 @@
           </fieldset>
           <div class="form-grid">
             <div>
-              <label for="booking-date">Päivä</label>
-              <div class="date-picker">
-                <span class="date-picker-text" id="booking-date-text" aria-hidden="true"></span>
-                <input type="date" id="booking-date" class="date-picker-native" required>
+              <span class="field-label" id="booking-date-label">Päivä</span>
+              <div class="date-field">
+                <button type="button" class="date-picker" id="booking-date-button"><span id="booking-date-text"></span></button>
               </div>
             </div>
             <div>

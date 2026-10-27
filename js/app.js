@@ -1,4 +1,5 @@
 import { rpc, ApiError, isConfigured } from './api.js';
+import { attachDatePicker } from './datepicker.js';
 
 const HOUR = 3600 * 1000;
 const SLOT = 30 * 60 * 1000;
@@ -92,10 +93,6 @@ function startSlotsOfDay(day) {
 }
 function dayKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-function parseDayKey(value) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '');
-  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
 }
 
 function fmtTime(d) {
@@ -356,12 +353,12 @@ function render() {
 
 function renderDate() {
   $('booking-hours-hint').textContent = `Varattavissa klo ${state.openHour}.00–${state.closeHour}.00.`;
-  $('date-input').value = dayKey(state.day);
-  $('date-input-text').textContent = fmtFullDate(state.day);
-  $('booking-date-text').textContent = fmtFullDate(state.day);
+  const text = fmtFullDate(state.day);
+  $('date-button-text').textContent = text;
+  $('booking-date-text').textContent = text;
+  $('date-button').setAttribute('aria-label', `Valitse päivä, valittuna ${text}`);
+  $('booking-date-button').setAttribute('aria-label', `Varauksen päivä, valittuna ${text}`);
   $('date-label').textContent = fmtDayLong(state.day);
-  $('booking-date').value = dayKey(state.day);
-  $('booking-date').min = dayKey(new Date());
 }
 
 function renderFreshness() {
@@ -709,12 +706,12 @@ function init() {
   $('logout-button').addEventListener('click', onLogout);
   $('prev-day').addEventListener('click', () => setDay(addDays(state.day, -1)));
   $('next-day').addEventListener('click', () => setDay(addDays(state.day, 1)));
-  for (const input of document.querySelectorAll('.date-picker-native')) {
-    // Avaa selaimen kalenterivalitsimen, vaikka itse kenttä on näkymätön.
-    input.addEventListener('click', () => { try { input.showPicker(); } catch { /* ei tukea */ } });
-  }
-  $('date-input').addEventListener('change', (e) => { const d = parseDayKey(e.target.value); if (d) setDay(d); });
-  $('booking-date').addEventListener('change', (e) => { const d = parseDayKey(e.target.value); if (d) setDay(d); });
+  attachDatePicker($('date-button'), { getValue: () => state.day, onSelect: setDay });
+  attachDatePicker($('booking-date-button'), {
+    getValue: () => state.day,
+    getMin: () => new Date(),
+    onSelect: (d) => { showFieldError('booking-error', ''); setDay(d); },
+  });
   $('booking-start').addEventListener('change', () => renderBookingForm());
   $('booking-hours').addEventListener('change', renderBookingSummary);
   $('booking-form').addEventListener('submit', onBookingSubmit);
