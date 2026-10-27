@@ -11,6 +11,7 @@ services:
     volumes:
       - ./00_supabase_stub.sql:/docker-entrypoint-initdb.d/00_supabase_stub.sql:ro
       - ../../supabase/migrations/20261027000000_pesutupa_init.sql:/docker-entrypoint-initdb.d/10_init.sql:ro
+      - ../../supabase/migrations/20261028000000_half_hour_slots.sql:/docker-entrypoint-initdb.d/11_half_hour_slots.sql:ro
       - ./20_seed_password.sql:/docker-entrypoint-initdb.d/20_seed_password.sql:ro
       - ../db:/tests:ro
     healthcheck:

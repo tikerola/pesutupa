@@ -35,11 +35,11 @@ GitHub Pages ei suorita palvelinkoodia, joten kaikki tarkistukset tehdään tiet
 
 | Sääntö | Missä tarkistetaan |
 |---|---|
-| Kesto 1–3 tuntia, kokonaisina tunteina | `create_booking` ja `CHECK`-rajoitteet |
+| Kesto 30 min – 3 h puolen tunnin välein; alku ja loppu tasa- tai puolelta tunnilta | `create_booking` ja `CHECK`-rajoitteet |
 | Kesto ei voi olla nolla tai negatiivinen | `CHECK (end_at > start_at)` |
 | Ei päällekkäisyyksiä samalla laitteella | exclusion constraint (laitekohtainen) |
 | Pesukone ja kuivuri varataan erikseen | päällekkäisyys tarkistetaan laitteen mukaan |
-| Mennyttä aikaa ei voi varata (kuluva tunti voi) | `create_booking` |
+| Mennyttä aikaa ei voi varata (kuluvan puolen tunnin jakson voi) | `create_booking` |
 | Saman asunnon vierekkäiset varaukset samalle laitteelle yhteensä enintään 3 h | `create_booking` |
 | Jatkaminen tunti kerrallaan, vain vuoron viimeisen tunnin aikana ja vain jos seuraava tunti on vapaa | `extend_booking` ja exclusion constraint |
 | Varauksen voi tehdä enintään 90 päivää etukäteen | `create_booking` (asetus `booking_horizon_days`) |
@@ -59,11 +59,16 @@ Ajat tallennetaan `timestamptz`-muodossa ja näytetään käyttäjän paikallise
 2. Valitse alueeksi esimerkiksi **North EU (Stockholm)** tai **Central EU (Frankfurt)**.
 3. Tallenna tietokannan salasana salasanojen hallintaan. Sovellus ei tarvitse sitä.
 
-### 2.2 Aja migraatio
+### 2.2 Aja migraatiot
 
-1. Avaa projektissa **SQL Editor** → **New query**.
-2. Liitä editoriin tiedoston [`supabase/migrations/20261027000000_pesutupa_init.sql`](supabase/migrations/20261027000000_pesutupa_init.sql) koko sisältö ja paina **Run**.
-3. Tulokseksi pitää tulla *Success. No rows returned*.
+Aja kansion `supabase/migrations/` tiedostot **aikajärjestyksessä**, kukin omana kyselynään:
+
+1. [`20261027000000_pesutupa_init.sql`](supabase/migrations/20261027000000_pesutupa_init.sql): taulut, funktiot ja oikeudet
+2. [`20261028000000_half_hour_slots.sql`](supabase/migrations/20261028000000_half_hour_slots.sql): puolen tunnin varausjaksot
+
+Avaa projektissa **SQL Editor** → **New query**, liitä tiedoston koko sisältö ja paina **Run**. Tulokseksi pitää tulla *Success. No rows returned*.
+
+**Päivitettäessä** aja uusi migraatio ennen kuin julkaiset uuden käyttöliittymän (push GitHubiin).
 
 Vaihtoehtoisesti voit käyttää Supabase CLI:tä: `supabase link --project-ref <ref>` ja sen jälkeen `supabase db push`.
 
@@ -183,7 +188,7 @@ update app_private.settings set session_days = 30, booking_horizon_days = 90;
 `tests/local/docker-compose.yml` käynnistää PostgreSQL:n ja PostgRESTin, joka on sama REST-kerros kuin Supabasessa. Migraatio ajetaan automaattisesti, ja testisalasanaksi asetetaan `testisalasana-123`.
 
 ```bash
-# Tietokannan sääntö- ja käyttöoikeustestit (49 testiä)
+# Tietokannan sääntö- ja käyttöoikeustestit (53 testiä)
 bash tests/run-db-tests.sh --fresh
 
 # REST-rajapinnan testit: 20 rinnakkaista varausyritystä samaan aikaan + käyttöoikeudet
@@ -253,4 +258,4 @@ tests/local/                   Paikallinen testiympäristö (Docker Compose)
 - **Yhteinen salasana on yhteinen.** Kuka tahansa salasanan tietävä voi tehdä varauksia millä tahansa asunnon numerolla. Jos salasana leviää, vaihda se ja kirjaa laitteet ulos (kohta 4).
 - **Varaustilanne päivittyy 30 sekunnin välein** sekä aina, kun sivu tulee näkyviin ja varauksen yhteydessä. Tallennus tarkistetaan aina tietokannassa, joten vanhentunut näkymä ei voi aiheuttaa päällekkäistä varausta. Jos päivitys epäonnistuu, näkymässä näytetään varoitus.
 - **Kirjautumisyritysten rajoitus** tunnistaa asiakkaan Supabasen välittämästä IP-osoitteesta. Kokonaisraja (200 virhettä / 15 min) suojaa myös hajautetulta arvaamiselta.
-- **Ajat tasatunneittain:** järjestelmä olettaa aikavyöhykkeen, jossa tasatunnit ovat samat kuin UTC:ssä (Suomi täyttää tämän).
+- **Ajat puolen tunnin jaksoissa:** järjestelmä olettaa aikavyöhykkeen, jonka poikkeama UTC:stä on tasatunteja (Suomi täyttää tämän).

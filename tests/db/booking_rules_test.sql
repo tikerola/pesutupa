@@ -49,8 +49,9 @@ end $$;
 
 grant execute on all functions in schema test to anon;
 
--- Aikapisteet: kuluva tasatunti ja huominen sama tunti.
+-- Aikapisteet: kuluva tasatunti, kuluvan puolen tunnin jakson alku ja huominen sama tunti.
 select date_trunc('hour', now()) as h0,
+       to_timestamp(floor(extract(epoch from now()) / 1800) * 1800) as s0,
        date_trunc('hour', now()) + interval '1 day' as base
 \gset
 
@@ -75,30 +76,35 @@ select test.ok(:'tok_a' ~ '^[0-9a-f]{64}$', 'oikea salasana antaa istuntotunnist
 select test.ok(:'tok_a' <> :'tok_b', 'jokainen kirjautuminen saa oman tunnisteen');
 select test.expect_error($$select * from public.list_bookings('abc', now(), now() + interval '1 day')$$, '28000', 'virheellinen tunniste hylätään');
 select test.expect_error($$select * from public.list_bookings(null, now(), now() + interval '1 day')$$, '28000', 'puuttuva tunniste hylätään');
-select test.expect_error($$select * from public.create_booking(repeat('a', 64), 1, '9', date_trunc('hour', now()) + interval '1 day', 1)$$, '28000', 'arvattu tunniste ei kelpaa varaukseen');
+select test.expect_error($$select * from public.create_booking(repeat('a', 64), 1, '9', date_trunc('hour', now()) + interval '1 day', 60)$$, '28000', 'arvattu tunniste ei kelpaa varaukseen');
 select test.ok((select count(*) from public.get_devices(:'tok_a')) = 2, 'laitteet: Pesukone ja Kuivuri');
 
 \echo '--- Varauksen kesto ja ajankohta ---'
-select test.ok((select count(*) from public.create_booking(:'tok_a', 1, '9', :'base'::timestamptz, 3)) = 1, '3 tunnin varaus onnistuu');
-select test.expect_error(format('select * from public.create_booking(%L, 2, %L, %L, 4)', :'tok_a', '9', :'base'), 'P0001', '4 tunnin varaus hylätään');
+select test.ok((select count(*) from public.create_booking(:'tok_a', 1, '9', :'base'::timestamptz, 180)) = 1, '3 tunnin varaus onnistuu');
+select test.expect_error(format('select * from public.create_booking(%L, 2, %L, %L, 240)', :'tok_a', '9', :'base'), 'P0001', '4 tunnin varaus hylätään');
 select test.expect_error(format('select * from public.create_booking(%L, 2, %L, %L, 0)', :'tok_a', '9', :'base'), 'P0001', '0 tunnin varaus hylätään');
-select test.expect_error(format('select * from public.create_booking(%L, 2, %L, %L, -1)', :'tok_a', '9', :'base'), 'P0001', 'negatiivinen kesto hylätään');
-select test.expect_error(format('select * from public.create_booking(%L, 2, %L, %L::timestamptz + interval ''30 minutes'', 1)', :'tok_a', '9', :'base'), 'P0001', 'muu kuin tasatunti hylätään');
-select test.expect_error(format('select * from public.create_booking(%L, 2, %L, %L::timestamptz - interval ''1 hour'', 1)', :'tok_a', '9', :'h0'), 'P0001', 'mennyt aika hylätään');
-select test.expect_error(format('select * from public.create_booking(%L, 2, %L, now() + interval ''200 days'', 1)', :'tok_a', '9'), 'P0001', 'liian kaukainen aika hylätään');
-select test.expect_error(format('select * from public.create_booking(%L, 99, %L, %L, 1)', :'tok_a', '9', :'base'), 'P0001', 'tuntematon laite hylätään');
-select test.expect_error(format('select * from public.create_booking(%L, 2, %L, %L, 1)', :'tok_a', 'abc', :'base'), 'P0001', 'asunnon numero ilman numeroa hylätään');
-select test.expect_error(format('select * from public.create_booking(%L, 2, %L, %L, 1)', :'tok_a', '', :'base'), 'P0001', 'tyhjä asunnon numero hylätään');
-select test.ok((select apartment_number from public.create_booking(:'tok_b', 2, '  a   12 ', :'base'::timestamptz + interval '6 hours', 1)) = 'A 12', 'asunnon numero normalisoidaan (A 12)');
+select test.expect_error(format('select * from public.create_booking(%L, 2, %L, %L, -60)', :'tok_a', '9', :'base'), 'P0001', 'negatiivinen kesto hylätään');
+select test.expect_error(format('select * from public.create_booking(%L, 2, %L, %L::timestamptz + interval ''15 minutes'', 60)', :'tok_a', '9', :'base'), 'P0001', 'muu kuin tasa- tai puolitunti hylätään');
+select test.expect_error(format('select * from public.create_booking(%L, 2, %L, %L::timestamptz - interval ''1 hour'', 60)', :'tok_a', '9', :'h0'), 'P0001', 'mennyt aika hylätään');
+select test.expect_error(format('select * from public.create_booking(%L, 2, %L, now() + interval ''200 days'', 60)', :'tok_a', '9'), 'P0001', 'liian kaukainen aika hylätään');
+select test.expect_error(format('select * from public.create_booking(%L, 99, %L, %L, 60)', :'tok_a', '9', :'base'), 'P0001', 'tuntematon laite hylätään');
+select test.expect_error(format('select * from public.create_booking(%L, 2, %L, %L, 60)', :'tok_a', 'abc', :'base'), 'P0001', 'asunnon numero ilman numeroa hylätään');
+select test.expect_error(format('select * from public.create_booking(%L, 2, %L, %L, 60)', :'tok_a', '', :'base'), 'P0001', 'tyhjä asunnon numero hylätään');
+select test.ok((select apartment_number from public.create_booking(:'tok_b', 2, '  a   12 ', :'base'::timestamptz + interval '6 hours', 60)) = 'A 12', 'asunnon numero normalisoidaan (A 12)');
+select test.ok((select end_at - start_at from public.create_booking(:'tok_b', 2, '30', :'base'::timestamptz + interval '8 hours 30 minutes', 30)) = interval '30 minutes', '30 minuutin varaus puolelta tunnilta onnistuu');
+select test.ok((select end_at from public.create_booking(:'tok_b', 1, '30', :'base'::timestamptz + interval '8 hours 30 minutes', 90)) = :'base'::timestamptz + interval '10 hours', '1,5 tunnin varaus (8.30–10.00) onnistuu');
+select test.expect_error(format('select * from public.create_booking(%L, 2, %L, %L, 45)', :'tok_a', '9', :'base'), 'P0001', '45 minuutin kesto hylätään');
+select test.expect_error(format('select * from public.create_booking(%L, 2, %L, %L, 210)', :'tok_a', '9', :'base'), 'P0001', '3,5 tunnin varaus hylätään');
+select public.cancel_booking(:'tok_b', b.id) from public.my_bookings(:'tok_b') b where b.apartment_number = '30';
 
 \echo '--- Päällekkäisyydet ---'
-select test.expect_error(format('select * from public.create_booking(%L, 1, %L, %L::timestamptz + interval ''1 hour'', 1)', :'tok_b', '12', :'base'), '23P01', 'päällekkäinen varaus samalle laitteelle hylätään');
-select test.expect_error(format('select * from public.create_booking(%L, 1, %L, %L::timestamptz - interval ''1 hour'', 2)', :'tok_b', '12', :'base'), '23P01', 'osittain päällekkäinen varaus hylätään');
-select test.ok((select count(*) from public.create_booking(:'tok_b', 2, '12', :'base'::timestamptz + interval '1 hour', 1)) = 1, 'sama aika toiselle laitteelle onnistuu');
-select test.ok((select count(*) from public.create_booking(:'tok_b', 1, '12', :'base'::timestamptz + interval '3 hours', 1)) = 1, 'heti perään alkava varaus onnistuu (ei päällekkäinen)');
+select test.expect_error(format('select * from public.create_booking(%L, 1, %L, %L::timestamptz + interval ''1 hour'', 60)', :'tok_b', '12', :'base'), '23P01', 'päällekkäinen varaus samalle laitteelle hylätään');
+select test.expect_error(format('select * from public.create_booking(%L, 1, %L, %L::timestamptz - interval ''1 hour'', 120)', :'tok_b', '12', :'base'), '23P01', 'osittain päällekkäinen varaus hylätään');
+select test.ok((select count(*) from public.create_booking(:'tok_b', 2, '12', :'base'::timestamptz + interval '1 hour', 60)) = 1, 'sama aika toiselle laitteelle onnistuu');
+select test.ok((select count(*) from public.create_booking(:'tok_b', 1, '12', :'base'::timestamptz + interval '3 hours', 60)) = 1, 'heti perään alkava varaus onnistuu (ei päällekkäinen)');
 
 \echo '--- Kolmen tunnin raja vierekkäisillä varauksilla ---'
-select test.expect_error(format('select * from public.create_booking(%L, 1, %L, %L::timestamptz - interval ''1 hour'', 1)', :'tok_a', '9', :'base'), 'P0001', 'saman asunnon vierekkäinen lisätunti (yht. 4 h) hylätään');
+select test.expect_error(format('select * from public.create_booking(%L, 1, %L, %L::timestamptz - interval ''1 hour'', 60)', :'tok_a', '9', :'base'), 'P0001', 'saman asunnon vierekkäinen lisätunti (yht. 4 h) hylätään');
 
 \echo '--- Listaus ---'
 select test.ok((select count(*) from public.list_bookings(:'tok_a', :'base'::timestamptz - interval '1 day', :'base'::timestamptz + interval '1 day')) = 4, 'kaikki varaukset näkyvät kaikille');
@@ -113,15 +119,15 @@ select test.expect_error(format('select public.cancel_booking(%L, %L)', repeat('
 select test.ok((select count(*) from public.list_bookings(:'tok_a', :'base'::timestamptz - interval '1 day', :'base'::timestamptz + interval '1 day') where id = :'a_booking') = 1, 'varaus on yhä olemassa epäonnistuneen perumisen jälkeen');
 select public.cancel_booking(:'tok_a', :'a_booking');
 select test.ok((select count(*) from public.my_bookings(:'tok_a')) = 0, 'oma varaus peruttu');
-select test.ok((select count(*) from public.create_booking(:'tok_b', 1, '12', :'base'::timestamptz + interval '1 hour', 2)) = 1, 'peruttu aika vapautuu muille');
+select test.ok((select count(*) from public.create_booking(:'tok_b', 1, '12', :'base'::timestamptz + interval '1 hour', 120)) = 1, 'peruttu aika vapautuu muille');
 
 \echo '--- Vuoron jatkaminen ---'
-select id as a_now from public.create_booking(:'tok_a', 1, '9', :'h0'::timestamptz, 1) \gset
+select id as a_now from public.create_booking(:'tok_a', 1, '9', :'s0'::timestamptz, 60) \gset
 select test.expect_error(format('select * from public.extend_booking(%L, %L)', :'tok_b', :'a_now'), 'P0001', 'toisen laitteen vuoroa ei voi jatkaa');
-select test.ok((select end_at from public.extend_booking(:'tok_a', :'a_now')) = :'h0'::timestamptz + interval '2 hours', 'vuoron jatkaminen tunnilla onnistuu, kun seuraava tunti on vapaa');
+select test.ok((select end_at from public.extend_booking(:'tok_a', :'a_now')) = :'s0'::timestamptz + interval '2 hours', 'vuoron jatkaminen tunnilla onnistuu, kun seuraava tunti on vapaa');
 select test.expect_error(format('select * from public.extend_booking(%L, %L)', :'tok_a', :'a_now'), 'P0001', 'jatkaminen ei onnistu ennen vuoron viimeistä tuntia');
-select id as a_now2 from public.create_booking(:'tok_a', 2, '9', :'h0'::timestamptz, 1) \gset
-select test.ok((select count(*) from public.create_booking(:'tok_b', 2, '12', :'h0'::timestamptz + interval '1 hour', 1)) = 1, 'toinen asunto varaa seuraavan tunnin');
+select id as a_now2 from public.create_booking(:'tok_a', 2, '9', :'s0'::timestamptz, 60) \gset
+select test.ok((select count(*) from public.create_booking(:'tok_b', 2, '12', :'s0'::timestamptz + interval '1 hour', 60)) = 1, 'toinen asunto varaa seuraavan tunnin');
 select test.expect_error(format('select * from public.extend_booking(%L, %L)', :'tok_a', :'a_now2'), '23P01', 'jatkaminen estyy, jos seuraava tunti on varattu');
 
 \echo '--- Uloskirjautuminen ja istunnon uusiminen ---'

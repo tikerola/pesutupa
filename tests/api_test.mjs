@@ -66,7 +66,7 @@ const tokB = b.data.token;
 // --- Rinnakkaiset varausyritykset samaan aikaan ---
 const start = new Date();
 start.setUTCDate(start.getUTCDate() + 55 + Math.floor(Math.random() * 30));
-start.setUTCHours(Math.floor(Math.random() * 20), 0, 0, 0);
+start.setUTCHours(Math.floor(Math.random() * 20), Math.random() < 0.5 ? 0 : 30, 0, 0);
 
 const attempts = await Promise.all(
   Array.from({ length: PARALLEL }, (_, i) =>
@@ -75,7 +75,7 @@ const attempts = await Promise.all(
       p_device_id: 1,
       p_apartment_number: String(100 + i),
       p_start_at: start.toISOString(),
-      p_hours: 2,
+      p_minutes: 120,
     }),
   ),
 );
@@ -89,7 +89,7 @@ const winnerToken = attempts.indexOf(successes[0]) % 2 ? tokA : tokB;
 const otherToken = winnerToken === tokA ? tokB : tokA;
 
 // Toinen laite samaan aikaan onnistuu.
-const dryer = await rpc('create_booking', { p_token: otherToken, p_device_id: 2, p_apartment_number: '7', p_start_at: start.toISOString(), p_hours: 1 });
+const dryer = await rpc('create_booking', { p_token: otherToken, p_device_id: 2, p_apartment_number: '7', p_start_at: start.toISOString(), p_minutes: 60 });
 check(dryer.ok, 'kuivurin voi varata samalle ajalle kuin pesukoneen');
 
 // Listaus näyttää molemmille saman tilanteen.

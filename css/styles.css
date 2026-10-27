@@ -309,3 +309,6 @@ tr.slot-past td:first-child { border-left-color: var(--border); }
 }
 
 .date-field input { max-width: 280px; margin: 0 auto; display: block; }
+
+.no-bookings { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.no-bookings p { margin: 0; color: var(--muted); }

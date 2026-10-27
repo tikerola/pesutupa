@@ -101,7 +101,7 @@ Vapaat ajat ja varatut ajat on erotettava visuaalisesti toisistaan. Värien lis�
 
 - Pesukoneen tai kuivurin voi varata enintään kolmeksi tunniksi kerrallaan.
 - Varaus ei saa olla kestoltaan nolla tai negatiivinen.
-- Varaukset tehdään selkeissä yhden tunnin jaksoissa, ellei myöhemmin päätetä sallia muunpituisia vuoroja.
+- Varaukset tehdään puolen tunnin jaksoissa: varaus alkaa ja päättyy tasa- tai puolelta tunnilta, ja kesto on 30 minuutista 3 tuntiin (päätetty 27.10.2026; alun perin yhden tunnin jaksot).
 - Käyttäjä voi varata laitteen vain, jos valittu aika on vapaa.
 
 ### Varausten jatkaminen

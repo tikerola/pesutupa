@@ -1,8 +1,10 @@
 import { rpc, ApiError, isConfigured } from './api.js';
 
 const HOUR = 3600 * 1000;
+const SLOT = 30 * 60 * 1000;
 const REFRESH_INTERVAL = 30 * 1000;
-const MAX_HOURS = 3;
+const MAX_MINUTES = 180;
+const DEFAULT_MINUTES = 60;
 
 const STORAGE = {
   token: 'pesutupa.token',
@@ -68,14 +70,14 @@ function addDays(d, n) {
 function isSameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
-// Suomen aikavyöhykkeen poikkeamat ovat tasatunteja, joten tasatunti voidaan laskea epoch-ajasta.
-function floorHour(d) {
-  return new Date(Math.floor(d.getTime() / HOUR) * HOUR);
+// Suomen aikavyöhykkeen poikkeamat ovat tasatunteja, joten puolen tunnin jaksot voidaan laskea epoch-ajasta.
+function floorSlot(d) {
+  return new Date(Math.floor(d.getTime() / SLOT) * SLOT);
 }
-function hoursOfDay(day) {
+function slotsOfDay(day) {
   const result = [];
   const end = addDays(day, 1).getTime();
-  for (let t = day.getTime(); t < end; t += HOUR) result.push(new Date(t));
+  for (let t = day.getTime(); t < end; t += SLOT) result.push(new Date(t));
   return result;
 }
 function dayKey(d) {
@@ -107,8 +109,10 @@ function fmtRange(s, e) {
   if (e.getTime() === addDays(startOfDay(s), 1).getTime()) return `${fmtTime(s)}–24.00`;
   return `${fmtShortDate(s)} ${fmtTime(s)} – ${fmtShortDate(e)} ${fmtTime(e)}`;
 }
-function hoursLabel(n) {
-  return n === 1 ? '1 tunti' : `${n} tuntia`;
+function durationLabel(minutes) {
+  if (minutes < 60) return `${minutes} min`;
+  if (minutes === 60) return '1 tunti';
+  return `${String(minutes / 60).replace('.', ',')} tuntia`;
 }
 
 function deviceName(id) {
@@ -385,15 +389,13 @@ function renderDeviceControls() {
 function buildRows(deviceId) {
   const dayStart = state.day;
   const dayEnd = addDays(state.day, 1);
-  const nowHour = floorHour(new Date());
+  const nowSlot = floorSlot(new Date());
   const rows = [];
 
+  // Vapaat ajat näytetään vain siltä osin kuin ne ovat vielä varattavissa.
   const pushGap = (s, e) => {
-    if (e <= nowHour) rows.push({ type: 'past', start: s, end: e });
-    else if (s < nowHour) {
-      rows.push({ type: 'past', start: s, end: nowHour });
-      rows.push({ type: 'free', start: nowHour, end: e });
-    } else rows.push({ type: 'free', start: s, end: e });
+    const start = s < nowSlot ? nowSlot : s;
+    if (e > start) rows.push({ type: 'free', start, end: e });
   };
 
   const list = state.bookings
@@ -427,7 +429,24 @@ function renderCalendars() {
 
   const now = new Date();
   container.replaceChildren(...devices.map((device) => {
-    const rows = buildRows(device.id).map((row) => {
+    const allRows = buildRows(device.id);
+    const heading = el('h2', { id: `cal-h-${device.id}` }, el('span', { className: 'device-badge', 'aria-hidden': 'true' }), device.name);
+
+    if (!allRows.some((row) => row.type === 'booking')) {
+      const firstFree = allRows.find((row) => row.type === 'free');
+      return el('section', { className: 'card device-calendar', 'data-device': String(device.id), 'aria-labelledby': `cal-h-${device.id}` },
+        heading,
+        el('div', { className: 'no-bookings' },
+          el('p', { text: 'Ei varauksia.' }),
+          firstFree && el('button', {
+            type: 'button', className: 'button small',
+            'aria-label': `Varaa ${device.name}`,
+            text: 'Varaa',
+            onclick: () => prefillBooking(device.id, firstFree.start),
+          })));
+    }
+
+    const rows = allRows.map((row) => {
       if (row.type === 'booking') {
         const b = row.booking;
         const ended = b.end <= now;
@@ -438,12 +457,6 @@ function renderCalendars() {
           el('td', { className: 'col-apartment', text: b.apartment }),
           el('td', { className: 'col-time', text: fmtRange(b.start, b.end) }),
           el('td', { className: 'col-status' }, el('span', { className: `status ${statusCls}`, text: status })));
-      }
-      if (row.type === 'past') {
-        return el('tr', { className: 'slot-past' },
-          el('td', { className: 'col-apartment' }, el('span', { 'aria-hidden': 'true', text: '–' })),
-          el('td', { className: 'col-time', text: fmtRange(row.start, row.end) }),
-          el('td', { className: 'col-status' }, el('span', { className: 'status status-past', text: 'Mennyt' })));
       }
       return el('tr', { className: 'slot-free' },
         el('td', { className: 'col-apartment' }, el('span', { 'aria-hidden': 'true', text: '–' })),
@@ -460,7 +473,7 @@ function renderCalendars() {
     });
 
     return el('section', { className: 'card device-calendar', 'data-device': String(device.id), 'aria-labelledby': `cal-h-${device.id}` },
-      el('h2', { id: `cal-h-${device.id}` }, el('span', { className: 'device-badge', 'aria-hidden': 'true' }), device.name),
+      heading,
       el('table', { className: 'slots' },
         el('caption', { className: 'visually-hidden', text: `${device.name}: varaukset ${fmtDayLong(state.day)}` }),
         el('thead', {}, el('tr', {},
@@ -491,16 +504,16 @@ function prefillBooking(deviceId, start) {
 function renderBookingForm(preferredStart) {
   const deviceId = selectedDeviceId();
   const startSelect = $('booking-start');
-  const hoursSelect = $('booking-hours');
+  const durationSelect = $('booking-hours');
   const previousStart = preferredStart ?? Number(startSelect.value);
-  const previousHours = Number(hoursSelect.value) || 1;
-  const nowHour = floorHour(new Date());
+  const previousMinutes = Number(durationSelect.value) || DEFAULT_MINUTES;
+  const nowSlot = floorSlot(new Date());
   const known = state.loadedDayKey === dayKey(state.day);
 
-  const options = hoursOfDay(state.day)
-    .filter((h) => h >= nowHour)
+  const options = slotsOfDay(state.day)
+    .filter((h) => h >= nowSlot)
     .map((h) => {
-      const busy = known && deviceId !== null && isBusy(deviceId, h, new Date(h.getTime() + HOUR));
+      const busy = known && deviceId !== null && isBusy(deviceId, h, new Date(h.getTime() + SLOT));
       return el('option', { value: String(h.getTime()), disabled: busy, text: busy ? `${fmtTime(h)} (varattu)` : fmtTime(h) });
     });
 
@@ -514,16 +527,17 @@ function renderBookingForm(preferredStart) {
   }
 
   const start = startSelect.value ? new Date(Number(startSelect.value)) : null;
-  const hourOptions = [];
-  for (let n = 1; n <= MAX_HOURS; n++) {
-    const end = start ? new Date(start.getTime() + n * HOUR) : null;
+  const durationOptions = [];
+  for (let minutes = 30; minutes <= MAX_MINUTES; minutes += 30) {
+    const end = start ? new Date(start.getTime() + minutes * 60 * 1000) : null;
     const busy = !start || (known && isBusy(deviceId, start, end));
-    hourOptions.push(el('option', { value: String(n), disabled: busy, text: busy && start ? `${hoursLabel(n)} (ei vapaana)` : hoursLabel(n) }));
+    durationOptions.push(el('option', { value: String(minutes), disabled: busy, text: busy && start ? `${durationLabel(minutes)} (ei vapaana)` : durationLabel(minutes) }));
   }
-  hoursSelect.replaceChildren(...hourOptions);
-  const validHours = hourOptions.filter((o) => !o.disabled).map((o) => Number(o.value));
-  hoursSelect.value = String(validHours.includes(previousHours) ? previousHours : validHours.at(-1) ?? 1);
-  hoursSelect.disabled = !start;
+  durationSelect.replaceChildren(...durationOptions);
+  const valid = durationOptions.filter((o) => !o.disabled).map((o) => Number(o.value));
+  const fallback = valid.includes(DEFAULT_MINUTES) ? DEFAULT_MINUTES : valid.at(-1) ?? DEFAULT_MINUTES;
+  durationSelect.value = String(valid.includes(previousMinutes) ? previousMinutes : fallback);
+  durationSelect.disabled = !start;
   $('booking-submit').disabled = !start;
 
   renderBookingSummary();
@@ -538,7 +552,7 @@ function renderBookingSummary() {
     return;
   }
   const start = new Date(Number(startValue));
-  const end = new Date(start.getTime() + Number($('booking-hours').value) * HOUR);
+  const end = new Date(start.getTime() + Number($('booking-hours').value) * 60 * 1000);
   node.textContent = `Varaat: ${deviceName(deviceId)}, ${fmtDayShort(start)} klo ${fmtRange(start, end)}.`;
 }
 
@@ -551,7 +565,7 @@ async function onBookingSubmit(event) {
   const deviceId = selectedDeviceId();
   const apartment = $('booking-apartment').value.trim().replace(/\s+/g, ' ').toUpperCase();
   const startValue = $('booking-start').value;
-  const hours = Number($('booking-hours').value);
+  const minutes = Number($('booking-hours').value);
 
   if (deviceId === null) return showFieldError('booking-error', 'Valitse laite.');
   if (!startValue) return showFieldError('booking-error', 'Valitse alkamisaika.');
@@ -565,7 +579,6 @@ async function onBookingSubmit(event) {
   }
 
   const start = new Date(Number(startValue));
-  const end = new Date(start.getTime() + hours * HOUR);
   const button = $('booking-submit');
   button.disabled = true;
   button.textContent = 'Tallennetaan…';
@@ -575,7 +588,7 @@ async function onBookingSubmit(event) {
       p_device_id: deviceId,
       p_apartment_number: apartment,
       p_start_at: start.toISOString(),
-      p_hours: hours,
+      p_minutes: minutes,
     });
     if (!Array.isArray(rows) || rows.length !== 1) throw new ApiError('Varauksen tallennus epäonnistui. Yritä uudelleen.', 'unexpected', 0);
     const saved = parseBooking(rows[0]);
