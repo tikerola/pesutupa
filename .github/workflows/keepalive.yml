@@ -1,0 +1,39 @@
+# Päivittäinen tuotannon savutesti: kirjautuu sisään, hakee päivän
+# varaukset ja kirjautuu ulos. Pitää samalla ilmaisen Supabase-projektin
+# aktiivisena. Epäonnistuneesta ajosta GitHub lähettää sähköpostin.
+#
+# Tarvitsee:
+#   - repositorion muuttujat SUPABASE_URL ja SUPABASE_KEY (samat kuin julkaisussa)
+#   - salaisuuden PESUTUPA_PASSWORD (yhteinen salasana)
+name: Päivittäinen tarkistus
+
+on:
+  schedule:
+    # Joka päivä klo 5.17 UTC (Suomessa noin klo 7–8).
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Kirjaudu, hae varaukset ja kirjaudu ulos
+        env:
+          PESUTUPA_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          PESUTUPA_API_KEY: ${{ vars.SUPABASE_KEY }}
+          PESUTUPA_PASSWORD: ${{ secrets.PESUTUPA_PASSWORD }}
+        run: node tests/keepalive.mjs

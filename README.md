@@ -150,7 +150,7 @@ Repositorio voi olla julkinen, koska siinä ei ole salaisuuksia. Ilmaisella GitH
 
 Ylläpito tehdään Supabasen SQL Editorissa. Tulevia varauksia voi poistaa myös suoraan sovelluksesta.
 
-**Vaihda salasana** (vanhat kirjautumiset jäävät voimaan):
+**Vaihda salasana** (vanhat kirjautumiset jäävät voimaan). Päivitä samalla GitHubin salaisuus `PESUTUPA_PASSWORD` (kohta 4.1):
 ```sql
 select app_private.set_shared_password('Uusi-pitkä-salasana');
 ```
@@ -189,7 +189,29 @@ update app_private.settings set open_hour = 7, close_hour = 23;
 update app_private.settings set session_days = 30, booking_horizon_days = 90;
 ```
 
-**Huomio Supabasen Free-tasosta:** projekti keskeytetään, jos sitä ei käytetä viikkoon. Säännöllisessä käytössä tätä ei tapahdu. Keskeytetyn projektin voi palauttaa Supabasen hallintapaneelista.
+**Huomio Supabasen Free-tasosta:** projekti keskeytetään, jos sitä ei käytetä viikkoon. Päivittäinen tarkistus (kohta 4.1) estää tämän. Keskeytetyn projektin voi palauttaa Supabasen hallintapaneelista, eikä data katoa.
+
+### 4.1 Päivittäinen tarkistus (GitHub Actions)
+
+Työnkulku [`.github/workflows/keepalive.yml`](.github/workflows/keepalive.yml) ajaa joka aamu skriptin [`tests/keepalive.mjs`](tests/keepalive.mjs), joka:
+
+1. kirjautuu sisään yhteisellä salasanalla
+2. hakee laitteet ja päivän varaukset
+3. kirjautuu ulos
+
+Varauksiin ei kosketa, eikä tuotantoon jää mitään pysyvää. Ajo pitää samalla ilmaisen Supabase-projektin aktiivisena. Jos ajo epäonnistuu, GitHub lähettää sähköpostin.
+
+**Käyttöönotto:**
+1. GitHubissa: repositorio → **Settings → Secrets and variables → Actions → Secrets → New repository secret**.
+2. Nimi `PESUTUPA_PASSWORD`, arvoksi yhteinen salasana → **Add secret**. Salaisuus on salattu, eikä se näy koodissa eikä ajolokeissa.
+3. Kokeile: **Actions → Päivittäinen tarkistus → Run workflow**. Onnistuneen ajon lopussa lukee "Tuotanto toimii."
+
+Työnkulku käyttää samoja muuttujia `SUPABASE_URL` ja `SUPABASE_KEY` kuin julkaisu (kohta 3).
+
+**Muista:**
+- Kun yhteinen salasana vaihdetaan, päivitä salaisuus. Muuten ajo epäonnistuu, ja saat siitä sähköpostin.
+- GitHub pysäyttää ajastetut ajot, jos repositorioon ei ole tehty muutoksia 60 päivään. GitHub varoittaa tästä sähköpostilla, ja ajot saa takaisin päälle kohdasta **Actions → Päivittäinen tarkistus → Enable workflow**.
+- Sähköposti epäonnistuneesta ajosta menee oletuksena sille, joka on viimeksi muuttanut työnkulun ajastusta. Asetus: GitHubin **Settings → Notifications → Actions**.
 
 ---
 
