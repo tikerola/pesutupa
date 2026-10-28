@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="fi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#1f5f8b">
+  <title>Muutoshistoria – Pesutuvan varaukset</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <h1>Pesutuvan varaukset</h1>
+      <nav class="header-nav">
+        <a href="./">← Takaisin varauksiin</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card" aria-labelledby="history-heading">
+      <div class="history-head">
+        <h2 id="history-heading">Muutoshistoria</h2>
+        <button type="button" class="button small" id="history-refresh" hidden>Päivitä</button>
+      </div>
+      <p class="hint">Varausten luonnit, jatkot ja poistot 90 päivän ajalta, uusin ensin. Tekijä on laite, jolla muutos tehtiin, ei henkilö.</p>
+      <div id="history-list" aria-live="polite">
+        <div class="loading-card inline" role="status"><span class="spinner" aria-hidden="true"></span><span>Ladataan muutoshistoriaa…</span></div>
+      </div>
+    </section>
+
+    <footer class="app-footer">
+      <a class="footer-link" href="./">Takaisin varauksiin</a>
+    </footer>
+
+    <noscript><p class="card">Sovellus vaatii JavaScriptin.</p></noscript>
+  </main>
+
+  <script src="js/config.js"></script>
+  <script type="module" src="js/history.js"></script>
+</body>
+</html>

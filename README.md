@@ -71,7 +71,7 @@ Aja kansion `supabase/migrations/` tiedostot **aikajärjestyksessä**, kukin oma
 3. [`20261028010000_booking_hours.sql`](supabase/migrations/20261028010000_booking_hours.sql): varattava aika klo 8–22
 4. [`20261028020000_cancel_any_booking.sql`](supabase/migrations/20261028020000_cancel_any_booking.sql): kuka tahansa kirjautunut voi poistaa varauksen
 5. [`20261028030000_extend_half_hour.sql`](supabase/migrations/20261028030000_extend_half_hour.sql): vuoron jatko myös 30 minuutilla
-6. [`20261028040000_booking_log.sql`](supabase/migrations/20261028040000_booking_log.sql): muutosloki (näkyy sovelluksessa sivun alalaidan Muutoshistoria-linkistä)
+6. [`20261028040000_booking_log.sql`](supabase/migrations/20261028040000_booking_log.sql): muutosloki (oma sivu `muutoshistoria.html`, linkki varaussivun alalaidassa)
 
 Avaa projektissa **SQL Editor** → **New query**, liitä tiedoston koko sisältö ja paina **Run**. Tulokseksi pitää tulla *Success. No rows returned*.
 
@@ -259,11 +259,13 @@ Kirjautuminen, varausten luonti ja poisto, 20 samanaikaista varausyritystä ja m
 ## 6. Projektin rakenne
 
 ```
-index.html                     Sovelluksen ainoa sivu
+index.html                     Varaussivu
+muutoshistoria.html            Muutoshistoria (oma sivu, linkki varaussivun alalaidassa)
 css/styles.css                 Tyylit (mobiili ensin)
 js/app.js                      Käyttöliittymän logiikka
 js/api.js                      Supabasen RPC-kutsut (fetch, ei kirjastoja)
 js/datepicker.js               Suomenkielinen päivämäärävalitsin
+js/history.js                  Muutoshistoria-sivun toiminta
 js/config.example.js           Esimerkki asetuksista
 supabase/migrations/…sql       Taulut, rajoitteet, funktiot ja käyttöoikeudet
 tests/db/booking_rules_test.sql  Tietokannan sääntö- ja oikeustestit
