@@ -84,6 +84,7 @@ insert into app_private.booking_log (logged_at, action, booking_id, device_id, a
 select b.created_at, 'created', b.id, b.device_id, b.apartment_number, b.start_at, b.end_at, b.session_id, b.session_id
 from app_private.bookings b
 where b.created_at > now() - interval '90 days'
+  and not exists (select 1 from app_private.booking_log l where l.booking_id = b.id and l.action = 'created')
 order by b.created_at;
 
 create trigger bookings_log
