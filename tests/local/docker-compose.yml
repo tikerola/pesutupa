@@ -16,6 +16,7 @@ services:
       - ../../supabase/migrations/20261028020000_cancel_any_booking.sql:/docker-entrypoint-initdb.d/13_cancel_any_booking.sql:ro
       - ../../supabase/migrations/20261028030000_extend_half_hour.sql:/docker-entrypoint-initdb.d/14_extend_half_hour.sql:ro
       - ../../supabase/migrations/20261028040000_booking_log.sql:/docker-entrypoint-initdb.d/15_booking_log.sql:ro
+      - ../../supabase/migrations/20261028050000_log_hide_device.sql:/docker-entrypoint-initdb.d/16_log_hide_device.sql:ro
       - ./20_seed_password.sql:/docker-entrypoint-initdb.d/20_seed_password.sql:ro
       - ../db:/tests:ro
     healthcheck:

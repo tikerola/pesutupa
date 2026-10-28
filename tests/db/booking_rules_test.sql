@@ -218,8 +218,8 @@ select public.cancel_booking(:'tok_c', :'log_b');
 select test.ok((select count(*) from public.list_booking_log(:'tok_a2')) = 2, 'luonti ja poisto kirjataan');
 select test.ok((select action = 'deleted' and apartment_number = '50' and not actor_is_me and not actor_is_owner from public.list_booking_log(:'tok_a2') limit 1), 'uusin ensin: toisen laitteen poisto, ei varauksen tekijä');
 select test.ok((select actor_is_me from public.list_booking_log(:'tok_c') limit 1), 'poistaja näkee poiston omanaan');
-select test.ok((select bool_and(actor ~ '^[0-9A-F]{4}$') from public.list_booking_log(:'tok_a2')), 'tekijä näytetään lyhyenä laitetunnisteena');
-select test.ok((select count(distinct actor) from public.list_booking_log(:'tok_a2')) = 2, 'eri laitteilla on eri tunnisteet');
+select test.ok(pg_get_function_result('public.list_booking_log(text)'::regprocedure) !~ '(\(|, )actor ', 'laitetunnistetta ei palauteta selaimelle');
+select test.ok((select not actor_is_me and actor_is_owner is null and not by_admin from public.list_booking_log(:'tok_c') where action = 'created'), 'toisen laitteen luonnista ei kerrota tekijää');
 select id as log_c from public.create_booking(:'tok_c', 2, '51', :'base'::timestamptz, 60) \gset
 select public.logout(:'tok_c');
 select test.ok((select count(*) from public.list_booking_log(:'tok_a2') where action = 'extended') = 0, 'uloskirjautuminen ei kirjaa muutosta');
@@ -229,7 +229,7 @@ delete from app_private.bookings where id = :'log_c';
 insert into app_private.booking_log (logged_at, action, booking_id, device_id, apartment_number, start_at, end_at)
 values (now() - interval '91 days', 'created', gen_random_uuid(), 1, '1', now() - interval '91 days', now() - interval '91 days' + interval '1 hour');
 set role anon;
-select test.ok((select actor = 'ylläpito' and action = 'deleted' from public.list_booking_log(:'tok_a2') limit 1), 'ylläpidon poisto kirjataan tekijällä ylläpito');
+select test.ok((select by_admin and action = 'deleted' and actor_is_owner is null from public.list_booking_log(:'tok_a2') limit 1), 'ylläpidon poisto näkyy ylläpidon tekemänä');
 select public.cancel_booking(:'tok_a2', id) from public.create_booking(:'tok_a2', 1, '52', :'base'::timestamptz, 60);
 reset role;
 select test.ok((select count(*) from app_private.booking_log where logged_at < now() - interval '90 days') = 0, 'yli 90 päivää vanhat lokirivit siivotaan');

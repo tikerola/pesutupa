@@ -130,6 +130,7 @@ Vapaat ajat ja varatut ajat on erotettava visuaalisesti toisistaan. Värien lis�
 
 - Varausten luonnit, jatkot ja poistot kirjataan lokiin, joka näkyy kaikille kirjautuneille omalla sivullaan; sinne pääsee varaussivun alalaidan huomaamattomasta Muutoshistoria-linkistä ja takaisin sivun ylälaidan linkillä (päätetty 28.10.2026).
 - Tekijä on laite (istunto), ei henkilö. Lokia säilytetään 90 päivää.
+- Laitetunnistetta ei näytetä eikä palauteta selaimelle. Sivulla kerrotaan vain "Tämä laite", "Ylläpito" ja poistoissa, oliko poistaja varauksen tekijä vai joku muu (päätetty 28.10.2026).
 
 ### 15 minuutin sääntö
 

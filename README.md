@@ -30,7 +30,7 @@ GitHub Pages ei suorita palvelinkoodia, joten kaikki tarkistukset tehdään tiet
 - **Päällekkäisyydet** estää PostgreSQL:n exclusion constraint (`bookings_no_overlap`). Se on atominen, joten samanaikaisista yrityksistä vain yksi voi onnistua.
 - **Poistaminen:** kuka tahansa kirjautunut käyttäjä voi poistaa minkä tahansa tulevan tai käynnissä olevan varauksen. Käyttöliittymä kysyy ensin vahvistuksen ("Haluatko varmasti poistaa asunnon X varauksen?"). Ilman kirjautumista poisto ei onnistu, eikä päättyneitä varauksia voi poistaa.
 - **Jatkaminen:** varaus kytketään istuntoon eli laitteeseen, jolla se tehtiin. Vain sama laite voi jatkaa vuoroa.
-- **Muutosloki:** varausten luonnit, jatkot ja poistot kirjataan tietokannan liipaisimella tauluun `app_private.booking_log`, jota selain ei voi lukea suoraan. Kirjautuneet näkevät lokin funktiolla `list_booking_log` (90 päivää, enintään 200 riviä). Tekijä näytetään lyhyenä laitetunnisteena (esim. "Laite 7F3A"), josta istuntoa ei voi päätellä. Yhteisellä salasanalla henkilöä ei voi tunnistaa.
+- **Muutosloki:** varausten luonnit, jatkot ja poistot kirjataan tietokannan liipaisimella tauluun `app_private.booking_log`, jota selain ei voi lukea suoraan. Kirjautuneet näkevät lokin funktiolla `list_booking_log` (90 päivää, enintään 200 riviä). Muutoksen tehnyt istunto tallennetaan lokiin ylläpitäjää varten, mutta selaimelle ei palauteta laitetunnistetta. Sivulla näkyy vain "Tämä laite", "Ylläpito" ja poistoissa "Varauksen tekijä" tai "Joku muu kuin varauksen tekijä".
 - **Selaimessa käytetään vain julkista anon- tai publishable-avainta.** Sillä ei pääse tauluihin käsiksi, koska oikeudet on rajattu tietokannassa.
 
 ### Tietokannassa tarkistettavat säännöt
@@ -72,6 +72,7 @@ Aja kansion `supabase/migrations/` tiedostot **aikajärjestyksessä**, kukin oma
 4. [`20261028020000_cancel_any_booking.sql`](supabase/migrations/20261028020000_cancel_any_booking.sql): kuka tahansa kirjautunut voi poistaa varauksen
 5. [`20261028030000_extend_half_hour.sql`](supabase/migrations/20261028030000_extend_half_hour.sql): vuoron jatko myös 30 minuutilla
 6. [`20261028040000_booking_log.sql`](supabase/migrations/20261028040000_booking_log.sql): muutosloki (oma sivu `muutoshistoria.html`, linkki varaussivun alalaidassa)
+7. [`20261028050000_log_hide_device.sql`](supabase/migrations/20261028050000_log_hide_device.sql): muutoshistoria ei näytä laitetunnistetta
 
 Avaa projektissa **SQL Editor** → **New query**, liitä tiedoston koko sisältö ja paina **Run**. Tulokseksi pitää tulla *Success. No rows returned*.
 

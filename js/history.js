@@ -42,12 +42,13 @@ function fmtLogTime(d) {
   return `${fmtShortDate(d)}${year} klo ${fmtTime(d)}`;
 }
 
+// Tekijää ei yksilöidä: kerrotaan vain, oliko se tämä laite, ylläpito tai
+// (poistoissa) varauksen tekijä vai joku muu. Palauttaa null, jos ei kerrottavaa.
 function actorText(row) {
-  if (row.actor === 'ylläpito') return 'Ylläpito';
-  const notes = [];
-  if (row.actor_is_me) notes.push('tämä laite');
-  if (row.action === 'deleted') notes.push(row.actor_is_owner ? 'varauksen tekijä' : 'ei varauksen tekijä');
-  return notes.length ? `Laite ${row.actor} (${notes.join(', ')})` : `Laite ${row.actor}`;
+  if (row.by_admin) return 'Ylläpito';
+  if (row.actor_is_me) return 'Tämä laite';
+  if (row.action === 'deleted') return row.actor_is_owner ? 'Varauksen tekijä' : 'Joku muu kuin varauksen tekijä';
+  return null;
 }
 
 function showNotice(text) {
@@ -65,6 +66,7 @@ function renderRows(rows) {
   $('history-list').replaceChildren(el('ol', { className: 'history-list' }, rows.map((row) => {
     const start = new Date(row.start_at);
     const end = new Date(row.end_at);
+    const actor = actorText(row);
     const time = row.action === 'extended' && row.previous_end_at
       ? `${fmtRange(start, end)} (ennen ${fmtTime(new Date(row.previous_end_at))})`
       : fmtRange(start, end);
@@ -77,7 +79,7 @@ function renderRows(rows) {
         el('div', {}, el('dt', { text: 'Asunto' }), el('dd', { text: row.apartment_number })),
         el('div', {}, el('dt', { text: 'Varausaika' }), el('dd', {},
           el('span', { className: 'nowrap', text: fmtDayShort(start) }), ' ', el('span', { className: 'nowrap', text: time }))),
-        el('div', {}, el('dt', { text: 'Tekijä' }), el('dd', { text: actorText(row) }))));
+        actor && el('div', {}, el('dt', { text: 'Tekijä' }), el('dd', { text: actor }))));
   })));
 }
 
