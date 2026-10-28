@@ -23,7 +23,9 @@ const state = {
   openHour: 8,
   closeHour: 22,
   bookings: [],
-  loadedDayKey: null,
+  // Aikaväli, jonka varaukset on haettu (valittu päivä ± 1 päivä).
+  loadedFrom: null,
+  loadedTo: null,
   myBookings: [],
   lastUpdated: null,
   stale: false,
@@ -300,7 +302,8 @@ async function refresh() {
     if (seq !== state.refreshSeq) return;
     state.bookings = bookings.map(parseBooking);
     state.myBookings = mine.map(parseBooking);
-    state.loadedDayKey = dayKey(day);
+    state.loadedFrom = addDays(day, -1);
+    state.loadedTo = addDays(day, 2);
     state.lastUpdated = new Date();
     state.stale = false;
   } catch (error) {
@@ -333,8 +336,15 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('online', () => { if (state.timer) refresh(); });
 
+// Onko valitun päivän varaukset jo haettu (edellinen haku kattaa myös
+// viereiset päivät, joten nuolilla siirtyminen näkyy heti).
+function hasDataFor(day) {
+  return Boolean(state.loadedFrom) && state.loadedFrom <= day && addDays(day, 1) <= state.loadedTo;
+}
+
 function setDay(day) {
   state.day = startOfDay(day);
+  if (state.token) state.loading = true; // ettei hetkellistä "ei voitu ladata" -tekstiä näy
   render();
   refresh();
 }
@@ -363,11 +373,11 @@ function renderDate() {
 
 function renderFreshness() {
   const node = $('freshness');
-  const dataForDay = state.loadedDayKey === dayKey(state.day);
+  const dataForDay = hasDataFor(state.day);
   node.classList.toggle('stale', state.stale && !state.loading);
-  $('calendars').classList.toggle('stale', state.stale);
+  $('calendars').classList.toggle('stale', state.stale && !state.loading);
   if (state.loading && !dataForDay) {
-    node.textContent = 'Ladataan varaustilannetta…';
+    node.textContent = ''; // latausympyrä näkyy kalenterin kohdalla
   } else if (state.stale) {
     node.textContent = state.lastUpdated && dataForDay
       ? `Varaustilannetta ei voitu päivittää. Näkymä on klo ${fmtTime(state.lastUpdated)} tilanne ja voi olla vanhentunut. (${state.loadError})`
@@ -438,15 +448,20 @@ function renderCalendars() {
   const devices = state.filter === 'all' ? state.devices : state.devices.filter((d) => String(d.id) === state.filter);
   container.classList.toggle('two', devices.length > 1);
 
-  if (state.loadedDayKey !== dayKey(state.day)) {
+  if (!hasDataFor(state.day)) {
     // Valitun päivän tietoja ei ole: ei näytetä vapaita aikoja arvauksena.
-    container.replaceChildren(
-      el('div', { className: 'card' },
-        el('p', { className: 'loading', text: state.loading ? 'Ladataan varaustilannetta…' : 'Varaustilannetta ei voitu ladata.' }),
-        !state.loading && el('button', { type: 'button', className: 'button', text: 'Yritä uudelleen', onclick: () => refresh() })),
-    );
+    // Pidetään alueen korkeus ennallaan, ettei sivu hypi latauksen aikana.
+    if (container.querySelector('.device-calendar')) container.style.minHeight = `${container.offsetHeight}px`;
+    container.replaceChildren(state.loading
+      ? el('div', { className: 'card loading-card', role: 'status' },
+        el('span', { className: 'spinner', 'aria-hidden': 'true' }),
+        el('span', { text: 'Ladataan varaustilannetta…' }))
+      : el('div', { className: 'card' },
+        el('p', { text: 'Varaustilannetta ei voitu ladata.' }),
+        el('button', { type: 'button', className: 'button', text: 'Yritä uudelleen', onclick: () => { state.loading = true; renderCalendars(); refresh(); } })));
     return;
   }
+  container.style.minHeight = '';
 
   const now = new Date();
   container.replaceChildren(...devices.map((device) => {
@@ -537,7 +552,7 @@ function renderBookingForm(preferredStart) {
   const previousStart = preferredStart ?? Number(startSelect.value);
   const previousMinutes = Number(durationSelect.value) || DEFAULT_MINUTES;
   const nowSlot = floorSlot(new Date());
-  const known = state.loadedDayKey === dayKey(state.day);
+  const known = hasDataFor(state.day);
 
   const options = startSlotsOfDay(state.day)
     .filter((h) => h >= nowSlot)

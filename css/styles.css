@@ -190,9 +190,34 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 
 /* Kalenterit */
 .calendars { display: grid; gap: 16px; margin-bottom: 16px; }
-.calendars[aria-busy="true"] .device-calendar { opacity: 0.6; }
 .calendars.stale .device-calendar { opacity: 0.7; }
 .loading { color: var(--muted); }
+
+/* Latausympyrä. Näytetään vasta pienen viiveen jälkeen, ettei nopea lataus vilku. */
+.loading-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 120px;
+  color: var(--muted);
+  opacity: 0;
+  animation: appear 0.2s ease-out 0.3s forwards;
+}
+.spinner {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border: 3px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes appear { to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation-duration: 2.4s; }
+}
 @media (min-width: 760px) {
   .calendars.two { grid-template-columns: 1fr 1fr; align-items: start; }
 }
