@@ -177,6 +177,11 @@ function showFieldError(id, text) {
 
 function showLogin(notice) {
   stopPolling();
+  // Muutoshistoria suljetaan, ettei edellisen istunnon tietoja jää näkyviin.
+  $('history-section').hidden = true;
+  $('history-list').replaceChildren();
+  $('history-toggle').setAttribute('aria-expanded', 'false');
+  $('history-toggle').textContent = 'Muutoshistoria';
   $('app-view').hidden = true;
   $('header-nav').hidden = true;
   $('login-view').hidden = false;
@@ -735,12 +740,85 @@ async function onExtend(booking, minutes, button) {
 }
 
 // ---------------------------------------------------------------------
+// Muutoshistoria
+// ---------------------------------------------------------------------
+
+const LOG_ACTIONS = { created: 'Varaus tehty', extended: 'Vuoroa jatkettu', deleted: 'Varaus poistettu' };
+
+function fmtLogTime(d) {
+  return `${fmtShortDate(d)}${d.getFullYear() !== new Date().getFullYear() ? d.getFullYear() : ''} klo ${fmtTime(d)}`;
+}
+
+function actorText(row) {
+  if (row.actor === 'ylläpito') return 'Ylläpito';
+  const parts = [`Laite ${row.actor}`];
+  if (row.actor_is_me) parts.push('tämä laite');
+  if (row.action === 'deleted') parts.push(row.actor_is_owner ? 'varauksen tekijä' : 'ei varauksen tekijä');
+  return parts.length > 1 ? `${parts[0]} (${parts.slice(1).join(', ')})` : parts[0];
+}
+
+async function loadHistory() {
+  const container = $('history-list');
+  const button = $('history-refresh');
+  button.disabled = true;
+  container.setAttribute('aria-busy', 'true');
+  if (!container.querySelector('.history-item')) {
+    container.replaceChildren(el('div', { className: 'loading-card inline', role: 'status' },
+      el('span', { className: 'spinner', 'aria-hidden': 'true' }), el('span', { text: 'Ladataan muutoshistoriaa…' })));
+  }
+  try {
+    const rows = await rpc('list_booking_log', { p_token: state.token });
+    if (!rows.length) {
+      container.replaceChildren(el('p', { className: 'empty', text: 'Ei muutoksia 90 päivän ajalta.' }));
+      return;
+    }
+    container.replaceChildren(el('ol', { className: 'history-list' }, rows.map((row) => {
+      const start = new Date(row.start_at);
+      const end = new Date(row.end_at);
+      const time = row.action === 'extended' && row.previous_end_at
+        ? `${fmtRange(start, end)} (ennen ${fmtTime(new Date(row.previous_end_at))})`
+        : fmtRange(start, end);
+      return el('li', { className: `history-item action-${row.action}` },
+        el('p', { className: 'history-title' },
+          el('span', { className: 'history-action', text: LOG_ACTIONS[row.action] || row.action }),
+          el('time', { className: 'history-time', datetime: row.logged_at, text: fmtLogTime(new Date(row.logged_at)) })),
+        el('dl', {},
+          el('div', {}, el('dt', { text: 'Laite' }), el('dd', { text: deviceName(row.device_id) })),
+          el('div', {}, el('dt', { text: 'Asunto' }), el('dd', { text: row.apartment_number })),
+          el('div', {}, el('dt', { text: 'Varausaika' }), el('dd', {},
+            el('span', { className: 'nowrap', text: fmtDayShort(start) }), ' ', el('span', { className: 'nowrap', text: time }))),
+          el('div', {}, el('dt', { text: 'Tekijä' }), el('dd', { text: actorText(row) }))));
+    })));
+  } catch (error) {
+    if (error instanceof ApiError && error.isSessionError) return onSessionExpired();
+    container.replaceChildren(el('p', { className: 'empty', text: `Muutoshistoriaa ei voitu ladata. (${error.message})` }));
+  } finally {
+    button.disabled = false;
+    container.setAttribute('aria-busy', 'false');
+  }
+}
+
+function toggleHistory() {
+  const section = $('history-section');
+  const open = section.hidden;
+  section.hidden = !open;
+  $('history-toggle').setAttribute('aria-expanded', String(open));
+  $('history-toggle').textContent = open ? 'Piilota muutoshistoria' : 'Muutoshistoria';
+  if (open) {
+    loadHistory();
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+// ---------------------------------------------------------------------
 // Käynnistys
 // ---------------------------------------------------------------------
 
 function init() {
   $('login-form').addEventListener('submit', onLogin);
   $('logout-button').addEventListener('click', onLogout);
+  $('history-toggle').addEventListener('click', toggleHistory);
+  $('history-refresh').addEventListener('click', loadHistory);
   $('prev-day').addEventListener('click', () => setDay(addDays(state.day, -1)));
   $('next-day').addEventListener('click', () => setDay(addDays(state.day, 1)));
   attachDatePicker($('date-button'), { getValue: () => state.day, onSelect: setDay });

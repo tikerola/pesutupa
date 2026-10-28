@@ -43,7 +43,7 @@ async function rpc(name, body) {
 console.log(LOCAL ? `Paikallinen testikanta (${REST}): kaikki testit\n` : `Tuotanto (${REST}): vain lukevat tarkistukset, kantaan ei kirjoiteta\n`);
 
 // --- Käyttöoikeudet (eivät kirjoita mitään) ---
-for (const table of ['bookings', 'sessions', 'settings', 'devices', 'login_failures']) {
+for (const table of ['bookings', 'sessions', 'settings', 'devices', 'login_failures', 'booking_log']) {
   const res = await fetch(`${REST}/${table}?select=*`, { headers: headers() });
   check(!res.ok, `taulu ${table} ei ole luettavissa suoraan (HTTP ${res.status})`);
 }
@@ -68,6 +68,7 @@ for (const table of ['bookings', 'sessions', 'settings', 'devices', 'login_failu
     ['create_booking', { p_token: fake, p_device_id: 1, p_apartment_number: '1', p_start_at: far.toISOString(), p_minutes: 60 }, 'varausta ei voi tehdä'],
     ['extend_booking', { p_token: fake, p_booking_id: '00000000-0000-0000-0000-000000000000' }, 'varausta ei voi jatkaa'],
     ['cancel_booking', { p_token: fake, p_booking_id: '00000000-0000-0000-0000-000000000000' }, 'varausta ei voi poistaa'],
+    ['list_booking_log', { p_token: fake }, 'muutoshistoria ei näy'],
   ];
   for (const [name, body, label] of calls) {
     const r = await rpc(name, body);

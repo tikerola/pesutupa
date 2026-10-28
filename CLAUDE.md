@@ -126,6 +126,11 @@ Vapaat ajat ja varatut ajat on erotettava visuaalisesti toisistaan. Värien lis�
 - Perumisesta näytetään vahvistus.
 - Kuka tahansa kirjautunut käyttäjä voi poistaa minkä tahansa varauksen. Ennen poistoa kysytään vahvistus, jossa näkyy varauksen asunnon numero (päätetty 27.10.2026; alun perin muiden varauksia ei voinut perua).
 
+### Muutosloki
+
+- Varausten luonnit, jatkot ja poistot kirjataan lokiin, joka näkyy kaikille kirjautuneille sivun alalaidan huomaamattomasta Muutoshistoria-linkistä (päätetty 28.10.2026).
+- Tekijä on laite (istunto), ei henkilö. Lokia säilytetään 90 päivää.
+
 ### 15 minuutin sääntö
 
 Jos käyttäjä ei ole aloittanut vuoroaan 15 minuutin kuluessa varauksen alkamisesta, toinen käyttäjä voi ottaa kuluvan tunnin käyttöönsä.
