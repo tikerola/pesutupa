@@ -208,6 +208,8 @@ Sisällytä projektiin:
 - Esimerkki ympäristöasetuksista ilman oikeita salaisuuksia.
 - Testausohjeet.
 
+Supabase-tietokanta on tuotantokäytössä (28.10.2026 alkaen). Testit eivät saa poistaa tai muuttaa olemassa olevaa tietoa eivätkä luoda tuotantokantaan mitään pysyvää. Tuotantoa vastaan ajetaan vain kirjoittamattomia tarkistuksia. Kirjoittavat testit ajetaan paikallisessa Docker-kannassa, ja tietokantatestit perutaan transaktiolla.
+
 Älä väitä sovellusta käyttövalmiiksi ennen kuin kirjautuminen, tietokanta, käyttöoikeudet, varausten luonti, peruminen ja päällekkäisyyksien esto on testattu.
 
 ## 11. Kehityksen työjärjestys

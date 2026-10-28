@@ -3,14 +3,28 @@
 -- Ajetaan PAIKALLISEEN testikantaan (tests/local/docker-compose.yml):
 --   docker compose -f tests/local/docker-compose.yml exec -T db \
 --     psql -U postgres -v ON_ERROR_STOP=1 -f /tests/booking_rules_test.sql
--- Testi tyhjentää varaukset ja istunnot – älä aja tuotantokantaan.
 -- Odottaa salasanaa 'testisalasana-123' (tests/local/20_seed_password.sql).
+--
+-- Turvallisuus: kaikki ajetaan yhdessä transaktiossa, joka perutaan
+-- (rollback) lopuksi tai virheen sattuessa, joten kantaan ei jää muutoksia.
+-- Lisäksi testi kieltäytyy toimimasta muualla kuin paikallisessa
+-- testikannassa (asetus pesutupa.test_database, tests/local/00_supabase_stub.sql).
 -- =====================================================================
 \set ON_ERROR_STOP on
 \set QUIET on
 \pset tuples_only on
 \o /dev/null
 set client_min_messages = notice;
+
+begin;
+
+do $$
+begin
+  if coalesce(current_setting('pesutupa.test_database', true), '') <> 'on' then
+    raise exception using errcode = 'TF000',
+      message = 'Tämä ei ole paikallinen testikanta – testiä ei ajeta. Käytä: bash tests/run-db-tests.sh --fresh';
+  end if;
+end $$;
 
 reset role;
 delete from app_private.bookings;
@@ -20,7 +34,6 @@ delete from app_private.login_failures;
 -- vuorokauden aikaan tahansa; aukioloajat testataan erikseen alempana.
 update app_private.settings set open_hour = 0, close_hour = 24;
 
-drop schema if exists test cascade;
 create schema test;
 grant usage on schema test to anon;
 
@@ -166,10 +179,6 @@ select test.expect_error(format('select * from public.my_bookings(%L)', :'tok_b'
 select count(*) from (select public.login('väärin-' || g) from generate_series(1, 10) g) x \gset
 select test.ok((public.login('testisalasana-123') ->> 'error') = 'too_many_attempts', 'liian monen virheen jälkeen kirjautuminen estetään hetkeksi');
 
-reset role;
-delete from app_private.bookings;
-delete from app_private.sessions;
-delete from app_private.login_failures;
-update app_private.settings set open_hour = 8, close_hour = 22;
-drop schema test cascade;
-\echo '=== Kaikki tietokantatestit läpäisty ==='
+-- Perutaan kaikki testin muutokset.
+rollback;
+\echo '=== Kaikki tietokantatestit läpäisty (muutokset peruttu) ==='

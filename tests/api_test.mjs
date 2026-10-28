@@ -1,19 +1,21 @@
 // REST-rajapinnan testit: rinnakkaiset varausyritykset ja käyttöoikeudet.
 //
-// Paikallisesti (tests/local/docker-compose.yml käynnissä):
+// Paikallisesti (tests/local/docker-compose.yml käynnissä) ajetaan kaikki testit:
 //   node tests/api_test.mjs
 //
-// Oikeaa Supabase-projektia vastaan (luo testivarauksen ~60 päivän päähän ja peruu sen):
-//   PESUTUPA_SUPABASE_URL=https://xxxx.supabase.co \
-//   PESUTUPA_API_KEY=<anon- tai publishable-avain> \
-//   PESUTUPA_PASSWORD=<yhteinen salasana> \
-//   node tests/api_test.mjs
+// Tuotantoa (oikeaa Supabase-projektia) vastaan ajetaan vain tarkistukset, jotka
+// eivät kirjoita kantaan mitään: ei kirjautumista, ei varauksia, ei
+// salasanayrityksiä. Salasanaa ei tarvita.
+//   PESUTUPA_SUPABASE_URL=https://xxxx.supabase.co //   PESUTUPA_API_KEY=<anon- tai publishable-avain> //   node tests/api_test.mjs
+
+import { randomBytes } from 'node:crypto';
 
 const SUPABASE_URL = process.env.PESUTUPA_SUPABASE_URL;
 const REST = SUPABASE_URL ? `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1` : 'http://localhost:54321';
 const KEY = process.env.PESUTUPA_API_KEY || '';
-const PASSWORD = process.env.PESUTUPA_PASSWORD || 'testisalasana-123';
+const PASSWORD = 'testisalasana-123'; // vain paikallinen testikanta
 const PARALLEL = 20;
+const LOCAL = ['localhost', '127.0.0.1', '[::1]'].includes(new URL(REST).hostname);
 
 let failures = 0;
 function check(cond, label) {
@@ -38,17 +40,48 @@ async function rpc(name, body) {
   return { status: res.status, ok: res.ok, data };
 }
 
-// --- Käyttöoikeudet: taulut eivät näy REST-rajapinnassa ---
-for (const table of ['bookings', 'sessions', 'settings', 'devices']) {
+console.log(LOCAL ? `Paikallinen testikanta (${REST}): kaikki testit\n` : `Tuotanto (${REST}): vain lukevat tarkistukset, kantaan ei kirjoiteta\n`);
+
+// --- Käyttöoikeudet (eivät kirjoita mitään) ---
+for (const table of ['bookings', 'sessions', 'settings', 'devices', 'login_failures']) {
   const res = await fetch(`${REST}/${table}?select=*`, { headers: headers() });
   check(!res.ok, `taulu ${table} ei ole luettavissa suoraan (HTTP ${res.status})`);
 }
 {
-  const r = await rpc('set_shared_password', { p_password: 'murtautuja-12345' });
-  check(!r.ok, `salasanan vaihto ei ole kutsuttavissa (HTTP ${r.status})`);
-  const r2 = await rpc('list_bookings', { p_token: 'a'.repeat(64), p_from: new Date().toISOString(), p_to: new Date(Date.now() + 864e5).toISOString() });
-  check(!r2.ok && r2.data?.code === '28000', 'varaukset eivät näy ilman kirjautumista');
+  // Funktio ei näy rajapinnassa lainkaan, joten kutsu ei voi muuttaa mitään.
+  const r = await rpc('set_shared_password', { p_password: 'x' });
+  check(!r.ok && r.status === 404, `salasanan vaihto ei ole kutsuttavissa (HTTP ${r.status})`);
 }
+{
+  // Satunnainen, olematon istuntotunniste: istuntotarkistus hylkää kutsun ennen
+  // kuin mitään kirjoitetaan.
+  const fake = randomBytes(32).toString('hex');
+  const now = new Date();
+  const later = new Date(now.getTime() + 864e5);
+  const far = new Date(now.getTime() + 60 * 864e5);
+  far.setUTCHours(9, 0, 0, 0);
+  const calls = [
+    ['list_bookings', { p_token: fake, p_from: now.toISOString(), p_to: later.toISOString() }, 'varaukset eivät näy'],
+    ['my_bookings', { p_token: fake }, 'omat varaukset eivät näy'],
+    ['get_devices', { p_token: fake }, 'laitteet eivät näy'],
+    ['get_booking_hours', { p_token: fake }, 'aukioloajat eivät näy'],
+    ['create_booking', { p_token: fake, p_device_id: 1, p_apartment_number: '1', p_start_at: far.toISOString(), p_minutes: 60 }, 'varausta ei voi tehdä'],
+    ['extend_booking', { p_token: fake, p_booking_id: '00000000-0000-0000-0000-000000000000' }, 'varausta ei voi jatkaa'],
+    ['cancel_booking', { p_token: fake, p_booking_id: '00000000-0000-0000-0000-000000000000' }, 'varausta ei voi poistaa'],
+  ];
+  for (const [name, body, label] of calls) {
+    const r = await rpc(name, body);
+    check(!r.ok && r.data?.code === '28000', `${label} ilman kirjautumista (${name}: HTTP ${r.status})`);
+  }
+}
+
+if (!LOCAL) {
+  console.log(failures ? `\n${failures} testiä epäonnistui` : '\nKaikki tuotannon tarkistukset läpäisty');
+  console.log('Kirjautuminen, varaukset ja rinnakkaisuus testataan vain paikallisesti.');
+  process.exit(failures ? 1 : 0);
+}
+
+// ===== Tästä eteenpäin vain paikallinen testikanta: kirjoittaa kantaan. =====
 
 // --- Kirjautuminen ---
 const wrong = await rpc('login', { p_password: 'väärä-salasana' });

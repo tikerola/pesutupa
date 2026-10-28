@@ -217,20 +217,28 @@ npx http-server -p 5500 -c-1
 
 Sammutus: `docker compose -f tests/local/docker-compose.yml down -v`
 
-### 5.2 Testit oikeaa Supabase-projektia vastaan
+Testit eivät jätä paikalliseen kantaan mitään: tietokantatesti ajetaan yhtenä transaktiona, joka perutaan (rollback) lopuksi. Testi myös kieltäytyy toimimasta, jos kanta ei ole paikallinen testikanta (asetus `pesutupa.test_database`, jonka vain `tests/local/00_supabase_stub.sql` asettaa).
 
-Tee tämä käyttöönoton jälkeen ennen kuin osoite jaetaan asukkaille. Testi tekee testivarauksia noin 2–3 kuukauden päähän ja peruu ne lopuksi.
+### 5.2 Tarkistukset tuotantokantaa vastaan
+
+Tuotantokanta on käytössä, joten sitä vastaan ajetaan vain tarkistuksia, jotka **eivät kirjoita kantaan mitään**. Ne eivät kirjaudu, eivät tee varauksia eivätkä kokeile salasanoja, eikä salasanaa tarvita.
 
 ```bash
 PESUTUPA_SUPABASE_URL=https://abcd1234.supabase.co \
 PESUTUPA_API_KEY=<julkinen avain> \
-PESUTUPA_PASSWORD='<yhteinen salasana>' \
 node tests/api_test.mjs
 ```
 
-Testi varmistaa, että taulut eivät näy REST-rajapinnassa, salasanaa ei voi vaihtaa rajapinnan kautta, väärä salasana hylätään, 20 samanaikaisesta varausyrityksestä vain yksi onnistuu, pesukoneen ja kuivurin voi varata samalle ajalle ja varausta ei voi poistaa ilman kirjautumista.
+Tarkistukset varmistavat:
+- taulut eivät näy REST-rajapinnassa
+- salasanaa ei voi vaihtaa rajapinnan kautta
+- mikään varaus- tai listausfunktio ei toimi ilman voimassa olevaa istuntoa
 
-> `tests/db/booking_rules_test.sql` tyhjentää varaukset ja istunnot. **Älä aja sitä tuotantokantaan.**
+Istunto tarkistetaan ennen kuin mitään kirjoitetaan, joten hylätyt kutsut eivät muuta kantaa.
+
+Kirjautuminen, varausten luonti ja poisto, 20 samanaikaista varausyritystä ja muut kirjoittavat testit ajetaan vain paikallisesti samoilla migraatioilla (kohta 5.1). API-testi tunnistaa paikallisen ympäristön osoitteesta (`localhost`) ja ajaa kirjoittavat testit vain siellä.
+
+> Älä aja `tests/db/booking_rules_test.sql`-tiedostoa Supabasen SQL Editorissa. Se ei toimisi siellä (vartija pysäyttää sen), ja muutokset peruttaisiin joka tapauksessa.
 
 ### 5.3 Käsin testattavat asiat julkaisun jälkeen
 

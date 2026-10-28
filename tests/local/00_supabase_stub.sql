@@ -9,3 +9,7 @@ grant anon, authenticated, service_role to authenticator;
 create schema extensions;
 grant usage on schema extensions to anon, authenticated, service_role;
 grant usage on schema public to anon, authenticated, service_role;
+
+-- Merkitsee kannan paikalliseksi testikannaksi. Tietokantatesti
+-- (tests/db/booking_rules_test.sql) ei suostu toimimaan ilman tätä.
+alter database postgres set pesutupa.test_database = 'on';
