@@ -243,7 +243,7 @@ Kirjautuminen, varausten luonti ja poisto, 20 samanaikaista varausyritystä ja m
 ### 5.3 Käsin testattavat asiat julkaisun jälkeen
 
 - [ ] Kirjautuminen väärällä salasanalla näyttää virheen, ja oikealla salasanalla pääsee kalenteriin.
-- [ ] Päivien selaus (‹ ›, päivämäärä, *Tänään*) ja laitevalinta (*Molemmat / Pesukone / Kuivuri*) toimivat.
+- [ ] Päivien selaus (‹ › ja suomenkielinen kalenteri) ja laitevalinta (*Molemmat / Pesukone / Kuivuri*) toimivat.
 - [ ] Varauksen tekeminen näyttää onnistumisilmoituksen, ja varaus näkyy kalenterissa ja omissa varauksissa.
 - [ ] Toisella laitteella (esim. puhelin ja tietokone) näkyy sama varaus noin 30 sekunnin kuluessa.
 - [ ] Varauksen poisto kalenterista kysyy vahvistuksen ja kertoo asunnon numeron.
