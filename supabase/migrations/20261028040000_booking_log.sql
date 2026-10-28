@@ -6,7 +6,8 @@
 --   henkilöä ei voi tunnistaa. Laite näytetään lyhyenä tunnisteena,
 --   josta istuntoa ei voi päätellä.
 -- - Rivit säilytetään 90 päivää.
--- - Olemassa oleviin varauksiin ei kosketa. Loki alkaa tästä migraatiosta.
+-- - Olemassa oleviin varauksiin ei kosketa. Ne kirjataan lokiin
+--   "Varaus tehty" -riveinä alkuperäisellä tekoajalla ja tekijälaitteella.
 --
 -- Aja tämä Supabasen SQL Editorissa aiempien migraatioiden jälkeen.
 -- =====================================================================
@@ -77,6 +78,13 @@ end;
 $$;
 
 revoke execute on function app_private.log_booking_change() from public;
+
+-- Jo olemassa olevat varaukset lokiin (luettu vain, varauksiin ei kosketa).
+insert into app_private.booking_log (logged_at, action, booking_id, device_id, apartment_number, start_at, end_at, actor_session, owner_session)
+select b.created_at, 'created', b.id, b.device_id, b.apartment_number, b.start_at, b.end_at, b.session_id, b.session_id
+from app_private.bookings b
+where b.created_at > now() - interval '90 days'
+order by b.created_at;
 
 create trigger bookings_log
 after insert or update or delete on app_private.bookings
