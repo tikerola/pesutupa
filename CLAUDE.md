@@ -106,8 +106,8 @@ Vapaat ajat ja varatut ajat on erotettava visuaalisesti toisistaan. Värien lis�
 
 ### Varausten jatkaminen
 
-- Jos oman vuoron jälkeen ei ole muita varauksia, käyttäjä voi jatkaa vuoroaan tunti kerrallaan.
-- Jatkaminen sallitaan vain, jos seuraava tunti on vapaa.
+- Jos oman vuoron jälkeen ei ole muita varauksia, käyttäjä voi jatkaa vuoroaan tunti kerrallaan. Jatko voi olla myös puoli tuntia, esim. kun sulkemisaikaan tai seuraavaan varaukseen on puoli tuntia (päätetty 28.10.2026).
+- Jatkaminen sallitaan vain, jos jatkoaika (30 min tai tunti) on vapaa.
 - Jatkaminen ei saa aiheuttaa päällekkäisyyttä toisen varauksen kanssa.
 - Jatkovaraus käsitellään uutena varauksena tai olemassa olevan varauksen hallittuna muutoksena.
 

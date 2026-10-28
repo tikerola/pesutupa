@@ -670,7 +670,7 @@ function renderOwnBookings() {
   const now = new Date();
   container.replaceChildren(el('div', { className: 'own-list' }, state.myBookings.map((b) => {
     const ongoing = b.start <= now && now < b.end;
-    const canExtend = ongoing && now.getTime() >= b.end.getTime() - HOUR && b.end.getTime() + HOUR <= closesAt(startOfDay(b.start)).getTime();
+    const extendBy = ongoing ? extendOptions(b, now) : [];
     return el('article', { className: 'own-item', 'aria-label': `${deviceName(b.deviceId)} ${fmtDayShort(b.start)} ${fmtRange(b.start, b.end)}` },
       el('dl', {},
         el('div', {}, el('dt', { text: 'Laite' }), el('dd', { text: deviceName(b.deviceId) })),
@@ -678,7 +678,11 @@ function renderOwnBookings() {
         el('div', {}, el('dt', { text: 'Asunto' }), el('dd', { text: b.apartment })),
         el('div', {}, el('dt', { text: 'Varausaika' }), el('dd', { text: fmtRange(b.start, b.end) + (ongoing ? ' (käynnissä)' : '') }))),
       el('div', { className: 'actions' },
-        canExtend && el('button', { type: 'button', className: 'button small', text: 'Jatka tunnilla', onclick: (e) => onExtend(b, e.currentTarget) }),
+        ...extendBy.map((minutes) => el('button', {
+          type: 'button', className: 'button small',
+          text: minutes === 60 ? 'Jatka tunnilla' : 'Jatka 30 min',
+          onclick: (e) => onExtend(b, minutes, e.currentTarget),
+        })),
         el('button', { type: 'button', className: 'button small danger', text: 'Poista varaus', onclick: (e) => onCancel(b, e.currentTarget) })));
   })));
 }
@@ -698,11 +702,29 @@ async function onCancel(booking, button) {
   await refresh();
 }
 
-async function onExtend(booking, button) {
+// Jatkovaihtoehdot (minuutteina) käynnissä olevalle omalle vuorolle: vain
+// vuoron viimeisen tunnin aikana ja vain sen verran kuin vapaata aikaa on
+// ennen sulkemisaikaa tai saman laitteen seuraavaa varausta. Tietokanta
+// tarkistaa saman vielä tallennettaessa.
+function extendOptions(booking, now) {
+  if (now.getTime() < booking.end.getTime() - HOUR) return [];
+  let limit = closesAt(startOfDay(booking.start)).getTime();
+  if (hasDataFor(startOfDay(booking.end))) {
+    for (const other of state.bookings) {
+      if (other.deviceId === booking.deviceId && other.id !== booking.id && other.start >= booking.end) {
+        limit = Math.min(limit, other.start.getTime());
+      }
+    }
+  }
+  const room = limit - booking.end.getTime();
+  return [30, 60].filter((minutes) => minutes * 60 * 1000 <= room);
+}
+
+async function onExtend(booking, minutes, button) {
   button.disabled = true;
   button.textContent = 'Jatketaan…';
   try {
-    const rows = await rpc('extend_booking', { p_token: state.token, p_booking_id: booking.id });
+    const rows = await rpc('extend_booking', { p_token: state.token, p_booking_id: booking.id, p_minutes: minutes });
     const updated = parseBooking(rows[0]);
     showMessage(`Vuoroa jatkettu. ${deviceName(updated.deviceId)} on varattu klo ${fmtTime(updated.end)} asti.`);
   } catch (error) {

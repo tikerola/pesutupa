@@ -43,7 +43,7 @@ GitHub Pages ei suorita palvelinkoodia, joten kaikki tarkistukset tehdään tiet
 | Varattava aika klo 8.00–22.00 Suomen aikaa (myös jatkaminen) | `create_booking`, `extend_booking` (asetukset `open_hour`, `close_hour`) |
 | Mennyttä aikaa ei voi varata (kuluvan puolen tunnin jakson voi) | `create_booking` |
 | Saman asunnon vierekkäiset varaukset samalle laitteelle yhteensä enintään 3 h | `create_booking` |
-| Jatkaminen tunti kerrallaan, vain vuoron viimeisen tunnin aikana ja vain jos seuraava tunti on vapaa | `extend_booking` ja exclusion constraint |
+| Jatkaminen 30 minuutilla tai tunnilla, vain vuoron viimeisen tunnin aikana ja vain jos jatkoaika on vapaa | `extend_booking` ja exclusion constraint |
 | Varauksen voi tehdä enintään 90 päivää etukäteen | `create_booking` (asetus `booking_horizon_days`) |
 | Asunnon numero: 1–10 merkkiä, vähintään yksi numero, esim. `9` tai `A 12` | `create_booking` ja `CHECK` |
 
@@ -69,6 +69,7 @@ Aja kansion `supabase/migrations/` tiedostot **aikajärjestyksessä**, kukin oma
 2. [`20261028000000_half_hour_slots.sql`](supabase/migrations/20261028000000_half_hour_slots.sql): puolen tunnin varausjaksot
 3. [`20261028010000_booking_hours.sql`](supabase/migrations/20261028010000_booking_hours.sql): varattava aika klo 8–22
 4. [`20261028020000_cancel_any_booking.sql`](supabase/migrations/20261028020000_cancel_any_booking.sql): kuka tahansa kirjautunut voi poistaa varauksen
+5. [`20261028030000_extend_half_hour.sql`](supabase/migrations/20261028030000_extend_half_hour.sql): vuoron jatko myös 30 minuutilla
 
 Avaa projektissa **SQL Editor** → **New query**, liitä tiedoston koko sisältö ja paina **Run**. Tulokseksi pitää tulla *Success. No rows returned*.
 
@@ -197,7 +198,7 @@ update app_private.settings set session_days = 30, booking_horizon_days = 90;
 `tests/local/docker-compose.yml` käynnistää PostgreSQL:n ja PostgRESTin, joka on sama REST-kerros kuin Supabasessa. Migraatio ajetaan automaattisesti, ja testisalasanaksi asetetaan `testisalasana-123`.
 
 ```bash
-# Tietokannan sääntö- ja käyttöoikeustestit (61 testiä)
+# Tietokannan sääntö- ja käyttöoikeustestit (67 testiä)
 bash tests/run-db-tests.sh --fresh
 
 # REST-rajapinnan testit: 20 rinnakkaista varausyritystä samaan aikaan + käyttöoikeudet

@@ -149,8 +149,10 @@ select test.expect_error(format('select * from public.extend_booking(%L, %L)', :
 select test.ok((select end_at from public.extend_booking(:'tok_a', :'a_now')) = :'s0'::timestamptz + interval '2 hours', 'vuoron jatkaminen tunnilla onnistuu, kun seuraava tunti on vapaa');
 select test.expect_error(format('select * from public.extend_booking(%L, %L)', :'tok_a', :'a_now'), 'P0001', 'jatkaminen ei onnistu ennen vuoron viimeistä tuntia');
 select id as a_now2 from public.create_booking(:'tok_a', 2, '9', :'s0'::timestamptz, 60) \gset
-select test.ok((select count(*) from public.create_booking(:'tok_b', 2, '12', :'s0'::timestamptz + interval '1 hour', 60)) = 1, 'toinen asunto varaa seuraavan tunnin');
-select test.expect_error(format('select * from public.extend_booking(%L, %L)', :'tok_a', :'a_now2'), '23P01', 'jatkaminen estyy, jos seuraava tunti on varattu');
+select test.ok((select count(*) from public.create_booking(:'tok_b', 2, '12', :'s0'::timestamptz + interval '90 minutes', 60)) = 1, 'toinen asunto varaa ajan puolen tunnin päästä vuoron lopusta');
+select test.expect_error(format('select * from public.extend_booking(%L, %L)', :'tok_a', :'a_now2'), '23P01', 'tunnin jatko estyy, jos seuraava tunti ei ole kokonaan vapaa');
+select test.expect_error(format('select * from public.extend_booking(%L, %L, 45)', :'tok_a', :'a_now2'), 'P0001', 'muu kuin 30 tai 60 minuutin jatko hylätään');
+select test.ok((select end_at from public.extend_booking(:'tok_a', :'a_now2', 30)) = :'s0'::timestamptz + interval '90 minutes', '30 minuutin jatko onnistuu, kun seuraava puoli tuntia on vapaa');
 
 \echo '--- Varattava aika klo 8–22 ---'
 reset role;
@@ -174,6 +176,36 @@ select test.ok((select count(*) from public.my_bookings(:'tok_a2')) = 2, 'uusitt
 select test.expect_error(format('select * from public.my_bookings(%L)', :'tok_a'), '28000', 'vanha tunniste lakkaa toimimasta uusimisen jälkeen');
 select public.logout(:'tok_b');
 select test.expect_error(format('select * from public.my_bookings(%L)', :'tok_b'), '28000', 'uloskirjautunut tunniste ei toimi');
+
+\echo '--- Jatkaminen sulkemisaikaan asti ---'
+-- Käynnissä oleva vuoro, joka päättyy puoli tuntia ennen sulkemista.
+-- Sulkemisaika asetetaan testiä varten nykyhetken mukaan.
+reset role;
+delete from app_private.bookings;
+select case when extract(minute from ((:'s0'::timestamptz + interval '30 minutes') at time zone 'Europe/Helsinki')) = 30
+            then :'s0'::timestamptz + interval '30 minutes'
+            else :'s0'::timestamptz + interval '60 minutes' end as close_end \gset
+select coalesce(nullif(extract(hour from ((:'close_end'::timestamptz + interval '30 minutes') at time zone 'Europe/Helsinki'))::int, 0), 24) as close_h \gset
+update app_private.settings set open_hour = 0, close_hour = :close_h;
+insert into app_private.bookings (device_id, apartment_number, start_at, end_at, session_id)
+select 1, '9', :'close_end'::timestamptz - interval '30 minutes', :'close_end'::timestamptz, s.id
+from app_private.sessions s where s.token_hash = extensions.digest(:'tok_a2', 'sha256')
+returning id as a_close \gset
+-- Kuivurilla sama vuoro, jonka perässä on heti toisen asunnon varaus.
+insert into app_private.bookings (device_id, apartment_number, start_at, end_at, session_id)
+select 2, '9', :'close_end'::timestamptz - interval '30 minutes', :'close_end'::timestamptz, s.id
+from app_private.sessions s where s.token_hash = extensions.digest(:'tok_a2', 'sha256')
+returning id as a_blocked \gset
+insert into app_private.bookings (device_id, apartment_number, start_at, end_at)
+values (2, '12', :'close_end'::timestamptz, :'close_end'::timestamptz + interval '30 minutes');
+set role anon;
+select test.expect_error(format('select * from public.extend_booking(%L, %L, 30)', :'tok_a2', :'a_blocked'), '23P01', '30 minuutin jatko estyy, kun seuraava puoli tuntia on varattu');
+select test.expect_error(format('select * from public.extend_booking(%L, %L, 60)', :'tok_a2', :'a_close'), 'P0001', 'tunnin jatko sulkemisajan yli hylätään');
+select test.ok((select end_at from public.extend_booking(:'tok_a2', :'a_close', 30)) = :'close_end'::timestamptz + interval '30 minutes', '30 minuutin jatko sulkemisaikaan asti onnistuu');
+select test.expect_error(format('select * from public.extend_booking(%L, %L, 30)', :'tok_a2', :'a_close'), 'P0001', 'jatko sulkemisajan jälkeen hylätään');
+reset role;
+update app_private.settings set open_hour = 0, close_hour = 24;
+set role anon;
 
 \echo '--- Kirjautumisyritysten rajoitus ---'
 select count(*) from (select public.login('väärin-' || g) from generate_series(1, 10) g) x \gset

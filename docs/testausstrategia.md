@@ -158,7 +158,7 @@ Todennäköisyys (T) ja vaikutus (V) asteikolla 1–3. Riskitaso = T × V. Taso 
 | F3 Varauksen luonti | Laite, päivä, alkamisaika, kesto, asunnon numero, onnistumis- ja virheilmoitukset |
 | F4 Varaussäännöt | 30 min–3 h, 30 min jaksot, klo 8–22, 90 vrk horisontti, ei mennyttä aikaa, vierekkäiset yht. 3 h, päällekkäisyys laitekohtaisesti |
 | F5 Varauksen poisto | Vahvistuskysely asunnon numerolla, kenen tahansa varaus, päättynyttä ei voi poistaa, aika vapautuu |
-| F6 Vuoron jatkaminen | +1 h, vain viimeisen tunnin aikana, vain oma laite, seuraava tunti vapaa, ei yli klo 22 |
+| F6 Vuoron jatkaminen | +30 min tai +1 h, vain viimeisen tunnin aikana, vain oma laite, jatkoaika vapaa, ei yli klo 22 |
 | F7 Omat varaukset | Laitekohtainen lista, säilyy uudelleenkirjautumisessa |
 | F8 Ajantasaisuus | Automaattinen päivitys 30 s, päivitysaika näkyvissä, varoitus vanhentuneesta tiedosta, latausympyrä |
 | F9 Käyttöohjeet | 9 ohjetta näkyvät sisällöltään muuttumattomina |
@@ -187,7 +187,7 @@ Todennäköisyys (T) ja vaikutus (V) asteikolla 1–3. Riskitaso = T × V. Taso 
 |---|---|---|---|---|---|
 | Varaus tehty samalla laitteella | K | E | K | K | K |
 | Vuoron viimeinen tunti on alkanut | K | K | E | K | K |
-| Seuraava tunti on vapaa | K | K | K | E | K |
+| Jatkoaika (30 min / 1 h) on vapaa | K | K | K | E | K |
 | Jatko päättyy viimeistään klo 22 | K | K | K | K | E |
 | **Tulos** | **Jatko onnistuu** | Hylätään | Hylätään | Hylätään (päällekkäisyys) | Hylätään |
 
